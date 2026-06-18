@@ -11,6 +11,7 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 
 const planParser = require('./src/planParser');
 const taskStore = require('./src/taskStore');
@@ -20,6 +21,8 @@ let win = null;
 let tray = null;
 let planWatcher = null;
 let currentPlanFile = null;
+let localServer = null;
+let baseUrl = null;
 
 const DAILY_PLANS_DIR = path.join(
   app.getPath('home'),
@@ -40,6 +43,7 @@ const DEFAULT_SETTINGS = {
   focus: { mode: 'auto' },
   collapsed: false,
   reserveSpace: true,
+  ytStations: [],
 };
 
 function loadSettings() {
@@ -114,7 +118,7 @@ function createWindow() {
 
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  win.loadFile(path.join(__dirname, 'src', 'index.html'));
+  win.loadURL(`${baseUrl}/index.html`);
 
   applyClickThrough(settings.clickThrough);
 
@@ -381,7 +385,7 @@ function registerIpc() {
       return fs
         .readdirSync(dir)
         .filter((f) => /\.(mp3|wav|ogg|m4a)$/i.test(f))
-        .map((f) => ({ name: f, url: pathToFileUrl(path.join(dir, f)) }));
+        .map((f) => ({ name: f, url: `${baseUrl}/music/${encodeURIComponent(f)}` }));
     } catch {
       return [];
     }
@@ -390,6 +394,76 @@ function registerIpc() {
 
 function pathToFileUrl(p) {
   return 'file:///' + p.replace(/\\/g, '/').replace(/ /g, '%20');
+}
+
+// Serve the renderer (src/) and the music/ folder from a loopback HTTP origin.
+// A real http://127.0.0.1 origin is required for the embedded YouTube IFrame
+// player: YouTube rejects file:// origins with playback error 153.
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+};
+
+function startLocalServer() {
+  const srcDir = path.join(__dirname, 'src');
+  const musicDir = path.join(__dirname, 'music');
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      try {
+        let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+        if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
+
+        let root = srcDir;
+        let rel = urlPath;
+        if (urlPath.startsWith('/music/')) {
+          root = musicDir;
+          rel = urlPath.slice('/music/'.length);
+        } else {
+          rel = urlPath.replace(/^\/+/, '');
+        }
+
+        const filePath = path.normalize(path.join(root, rel));
+        if (!filePath.startsWith(root)) {
+          res.writeHead(403);
+          return res.end('Forbidden');
+        }
+        fs.readFile(filePath, (err, data) => {
+          if (err) {
+            res.writeHead(404);
+            return res.end('Not found');
+          }
+          const ext = path.extname(filePath).toLowerCase();
+          res.writeHead(200, {
+            'Content-Type': MIME[ext] || 'application/octet-stream',
+            'Cache-Control': 'no-cache',
+          });
+          res.end(data);
+        });
+      } catch (e) {
+        res.writeHead(500);
+        res.end('Server error');
+      }
+    });
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      localServer = server;
+      baseUrl = `http://127.0.0.1:${port}`;
+      resolve(baseUrl);
+    });
+  });
 }
 
 // ---------------- App lifecycle ----------------
@@ -404,9 +478,14 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     settings = loadSettings();
     taskStore.init(app.getPath('userData'));
+    try {
+      await startLocalServer();
+    } catch (e) {
+      console.error('Local server failed to start:', e.message);
+    }
     registerIpc();
     createWindow();
     buildTray();
@@ -431,6 +510,7 @@ if (!gotLock) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     if (planWatcher) planWatcher.close();
+    if (localServer) { try { localServer.close(); } catch {} }
     appbar.remove();
   });
 }

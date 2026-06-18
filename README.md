@@ -30,8 +30,10 @@ music**.
   hopping livelier (💪) during work sessions and dozing (😴) on breaks.
 - **Pomodoro timer** — 25 / 5 cycles (long break every 4th round) with a
   progress ring, desktop notifications, and a soft chime on phase changes.
-- **Lofi music** — a built-in *procedurally generated* lofi loop (copyright-safe)
-  plus playback of any `.mp3`/`.wav`/`.ogg` you drop into the `music/` folder.
+- **Lofi music** — a built-in *procedurally generated* lofi loop (copyright-safe),
+  playback of any `.mp3`/`.wav`/`.ogg` you drop into the `music/` folder, **and
+  YouTube lofi streams** (preset stations + paste your own link) via YouTube's
+  official embedded player.
 - **Click-through mode** — let the mouse pass through the overlay so it never
   gets in your way; hovering an actual panel re-enables interaction.
 - **System tray** — show/hide, toggle click-through, reserve screen space,
@@ -73,7 +75,16 @@ Tasks are merged from two sources:
 
 - The default track is a built-in generated lofi loop — no files needed.
 - Drop real tracks into `music/` (see `music/README.txt`) and use ⏭ to cycle.
-- Volume is shared between the generator and your files and is remembered.
+- **YouTube lofi**: tap a preset station chip (Lofi Girl, Chillhop, …) or paste any
+  YouTube link into the box and hit **+** to add it. ⏭ cycles through every source —
+  generator, local files, and YouTube stations alike.
+- Volume is shared across the generator, your files, and YouTube and is remembered.
+
+> **About YouTube:** streams play through YouTube's *official* embedded IFrame
+> player — nothing is downloaded or ripped, and creators keep their views/revenue.
+> The renderer is served from a local `http://127.0.0.1` origin (not `file://`)
+> because YouTube blocks embedded playback from `file://` origins. A few preset
+> livestream IDs rotate over time; if one stops, just paste a fresh link.
 
 > Note: the app intentionally ships **no copyrighted audio**. The "bundled"
 > sound is synthesized at runtime with the Web Audio API.

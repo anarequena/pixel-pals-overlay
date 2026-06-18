@@ -489,12 +489,23 @@ function notify(type) {
 
 // ---------------- Music UI ----------------
 
+const YT_PRESETS = [
+  { id: 'jfKfPfyJRdk', name: 'Lofi Girl — beats to relax/study to' },
+  { id: '4xDzrJKXOOY', name: 'Lofi Girl — beats to sleep/chill to' },
+  { id: 'rUxyKA_-grg', name: 'Chillhop — jazzy & lofi hip hop beats' },
+];
+
 function setupMusic() {
   window.LofiAudio.onState((s) => {
     el('music-toggle').textContent = s.playing ? '⏸ Lofi' : '▶ Lofi';
     el('music-now').textContent = s.name + (s.count > 1 ? ` (${s.count} tracks)` : '');
   });
   window.LofiAudio.init(settings.volume);
+
+  // Register preset + saved YouTube stations so ⏭ Next cycles through them too.
+  YT_PRESETS.forEach((p) => window.LofiAudio.registerYouTube(p.id, p.name));
+  (settings.ytStations || []).forEach((st) => window.LofiAudio.registerYouTube(st.id, st.name));
+  renderYtPresets();
 
   el('music-toggle').onclick = () => window.LofiAudio.toggle();
   el('music-next').onclick = () => window.LofiAudio.next();
@@ -504,6 +515,56 @@ function setupMusic() {
     window.LofiAudio.setVolume(parseFloat(vol.value));
     api.setSettings({ volume: parseFloat(vol.value) });
   };
+
+  el('yt-add').onclick = addYtFromInput;
+  el('yt-url').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addYtFromInput();
+  });
+}
+
+function renderYtPresets() {
+  const wrap = el('yt-presets');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const stations = [
+    ...YT_PRESETS,
+    ...(settings.ytStations || []).filter(
+      (st) => !YT_PRESETS.some((p) => p.id === st.id)
+    ),
+  ];
+  stations.forEach((p) => {
+    const b = document.createElement('button');
+    b.className = 'yt-chip';
+    b.textContent = p.name.split('—')[0].trim();
+    b.title = `Play: ${p.name}`;
+    b.onclick = () => window.LofiAudio.playYouTube(p.id, p.name);
+    wrap.appendChild(b);
+  });
+}
+
+function addYtFromInput() {
+  const inp = el('yt-url');
+  const v = inp.value.trim();
+  if (!v) return;
+  const res = window.LofiAudio.playYouTube(v);
+  if (!res) {
+    inp.classList.add('bad');
+    inp.value = '';
+    inp.placeholder = 'Not a valid YouTube link…';
+    setTimeout(() => {
+      inp.classList.remove('bad');
+      inp.placeholder = 'Paste a YouTube lofi link…';
+    }, 1600);
+    return;
+  }
+  inp.value = '';
+  const stations = (settings.ytStations || []).slice();
+  if (!stations.some((st) => st.id === res.id)) {
+    stations.push({ id: res.id, name: res.name });
+    settings.ytStations = stations;
+    api.setSettings({ ytStations: stations });
+    renderYtPresets();
+  }
 }
 
 // ---------------- Click-through ----------------

@@ -351,6 +351,62 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.yt-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.yt-chip {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s, transform 0.1s;
+}
+.yt-chip:hover { background: var(--accent); color: #2a1330; transform: translateY(-1px); }
+.music-yt {
+  display: flex;
+  gap: 6px;
+  margin-top: 7px;
+}
+.music-yt input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.music-yt input:focus { border-color: var(--accent); }
+.music-yt input.bad { border-color: var(--danger); }
+.music-yt input.bad::placeholder { color: var(--danger); }
+.music-yt .pomo-btn { flex: 0 0 auto; padding: 5px 11px; }
+
+/* Offscreen audio-only host for the YouTube IFrame player. Kept rendered (not
+   display:none) so playback isn't suspended, but pushed off-screen. */
+#yt-host {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 240px;
+  height: 135px;
+  pointer-events: none;
+  opacity: 0.01;
+  z-index: -1;
+}
 
 /* ---------- Add task ---------- */
 .add-task {

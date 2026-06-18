@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data:; media-src 'self' file: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+      content="default-src 'self'; img-src 'self' data: https://i.ytimg.com; media-src 'self' file: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.youtube.com https://s.ytimg.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com; connect-src 'self' https://www.youtube.com;" />
     <title>Pixel Pals Overlay</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -69,6 +69,11 @@
             <input type="range" id="music-vol" min="0" max="1" step="0.01" value="0.5" />
           </div>
           <div class="music-now" id="music-now">Built-in lofi loop</div>
+          <div class="yt-presets" id="yt-presets"></div>
+          <div class="music-yt">
+            <input type="text" id="yt-url" placeholder="Paste a YouTube lofi link…" maxlength="200" />
+            <button class="pomo-btn" id="yt-add" title="Add &amp; play this stream">＋</button>
+          </div>
         </div>
       </section>
 
@@ -88,6 +93,9 @@
         <span class="hint">Ctrl+Alt+P click-through · Ctrl+Alt+O show/hide</span>
       </footer>
     </div>
+
+    <!-- Offscreen host for the YouTube IFrame audio player (audio only). -->
+    <div id="yt-host" aria-hidden="true"><div id="yt-player"></div></div>
 
     <script src="starfield.js"></script>
     <script src="animals.js"></script>

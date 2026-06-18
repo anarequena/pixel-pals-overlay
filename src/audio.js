@@ -15,6 +15,9 @@
     audioEl: null,
     gen: null,
     stateCb: null,
+    ytPlayer: null,
+    ytReady: false,
+    _ytApiResolvers: null,
 
     async init(volume) {
       if (typeof volume === 'number') this.volume = volume;
@@ -56,6 +59,9 @@
       this.volume = Math.max(0, Math.min(1, v));
       if (this.master) this.master.gain.value = this.volume;
       if (this.audioEl) this.audioEl.volume = this.volume;
+      if (this.ytPlayer && this.ytReady) {
+        try { this.ytPlayer.setVolume(Math.round(this.volume * 100)); } catch {}
+      }
     },
 
     toggle() {
@@ -69,6 +75,8 @@
       const track = this.current();
       if (track.type === 'gen') {
         this.startGenerator();
+      } else if (track.type === 'yt') {
+        this.playYt(track);
       } else {
         this.audioEl.src = track.url;
         this.audioEl.volume = this.volume;
@@ -81,6 +89,9 @@
     stop() {
       if (this.gen) { this.stopGenerator(); }
       if (this.audioEl) { this.audioEl.pause(); }
+      if (this.ytPlayer && this.ytReady) {
+        try { this.ytPlayer.pauseVideo(); } catch {}
+      }
       this.playing = false;
       this.emit();
     },
@@ -90,6 +101,134 @@
       const ni = (this.index + 1) % this.playlist.length;
       if (wasPlaying) this.play(ni);
       else { this.index = ni; this.emit(); }
+    },
+
+    // ---------------- YouTube (official IFrame player; streams, no download) ---
+    // Accepts a raw 11-char id or any common YouTube URL form.
+    parseYtId(input) {
+      if (!input) return null;
+      const s = String(input).trim();
+      if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
+      let m;
+      if ((m = s.match(/[?&]v=([A-Za-z0-9_-]{11})/))) return m[1];
+      if ((m = s.match(/youtu\.be\/([A-Za-z0-9_-]{11})/))) return m[1];
+      if ((m = s.match(/youtube\.com\/(?:live|embed|shorts|v)\/([A-Za-z0-9_-]{11})/))) return m[1];
+      return null;
+    },
+
+    ensureYtApi() {
+      return new Promise((resolve, reject) => {
+        if (window.YT && window.YT.Player) return resolve();
+        if (this._ytApiResolvers) { this._ytApiResolvers.push(resolve); return; }
+        this._ytApiResolvers = [resolve];
+        const prev = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = () => {
+          if (typeof prev === 'function') { try { prev(); } catch {} }
+          const rs = this._ytApiResolvers || [];
+          this._ytApiResolvers = null;
+          rs.forEach((r) => r());
+        };
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        tag.onerror = () => { this._ytApiResolvers = null; reject(new Error('YouTube API blocked or offline')); };
+        document.head.appendChild(tag);
+      });
+    },
+
+    async ensureYtPlayer() {
+      await this.ensureYtApi();
+      if (this.ytPlayer) return this.ytPlayer;
+      return new Promise((resolve) => {
+        this.ytPlayer = new window.YT.Player('yt-player', {
+          host: 'https://www.youtube-nocookie.com',
+          width: '240',
+          height: '135',
+          playerVars: {
+            autoplay: 0, controls: 0, disablekb: 1, fs: 0,
+            modestbranding: 1, rel: 0, playsinline: 1, iv_load_policy: 3,
+            origin: window.location.origin,
+          },
+          events: {
+            onReady: () => {
+              this.ytReady = true;
+              try { this.ytPlayer.setVolume(Math.round(this.volume * 100)); } catch {}
+              resolve(this.ytPlayer);
+            },
+            onStateChange: (e) => this.onYtState(e),
+            onError: (e) => {
+              console.warn('YouTube player error', e && e.data);
+              const YT = window.YT;
+              let st = -1;
+              try { st = this.ytPlayer.getPlayerState(); } catch {}
+              const playingish = YT && YT.PlayerState &&
+                (st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING);
+              const t = this.current();
+              if (!playingish && t && t.type === 'yt') {
+                t.name = '⚠ Stream unavailable — try another';
+                this.emit();
+              }
+            },
+          },
+        });
+      });
+    },
+
+    async playYt(track) {
+      try {
+        await this.ensureYtPlayer();
+        this.ytReady = true;
+        this.ytPlayer.loadVideoById(track.videoId);
+        this.ytPlayer.setVolume(Math.round(this.volume * 100));
+        this.ytPlayer.playVideo();
+      } catch (e) {
+        console.warn('YouTube playback unavailable:', e.message);
+        const t = this.current();
+        if (t && t.type === 'yt') { t.name = '⚠ YouTube unavailable'; this.playing = false; this.emit(); }
+      }
+    },
+
+    onYtState(e) {
+      const YT = window.YT;
+      if (!YT || !YT.PlayerState) return;
+      if (e.data === YT.PlayerState.ENDED) {
+        this.next(true);
+      } else if (e.data === YT.PlayerState.PLAYING) {
+        try {
+          const data = this.ytPlayer.getVideoData();
+          const t = this.current();
+          if (data && data.title && t && t.type === 'yt') {
+            t.name = '▶ ' + data.title;
+            this.emit();
+          }
+        } catch {}
+      }
+    },
+
+    registerYouTube(videoId, name) {
+      if (!videoId) return -1;
+      let idx = this.playlist.findIndex((t) => t.type === 'yt' && t.videoId === videoId);
+      if (idx === -1) {
+        this.playlist.push({ type: 'yt', name: name || 'YouTube lofi ♪', videoId });
+        idx = this.playlist.length - 1;
+        this.emit();
+      } else if (name) {
+        this.playlist[idx].name = name;
+      }
+      return idx;
+    },
+
+    addYouTube(urlOrId, name) {
+      const id = this.parseYtId(urlOrId);
+      if (!id) return null;
+      const idx = this.registerYouTube(id, name);
+      return { id, index: idx, name: this.playlist[idx].name };
+    },
+
+    playYouTube(urlOrId, name) {
+      const res = this.addYouTube(urlOrId, name);
+      if (!res) return null;
+      this.play(res.index);
+      return res;
     },
 
     // ---------------- Procedural lofi generator ----------------
