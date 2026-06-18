@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; media-src 'self' file: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+    <title>Pixel Pals Overlay</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="galaxy"></div>
+    <canvas id="starfield"></canvas>
+    <div id="overlay" class="overlay">
+      <!-- Header / drag handle -->
+      <header class="panel header interactive" id="drag-handle">
+        <div class="header-title">
+          <span class="logo">🐾</span>
+          <div>
+            <div class="app-name">Pixel Pals</div>
+            <div class="app-date" id="plan-date">Loading plan…</div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button class="icon-btn" id="btn-clickthrough" title="Toggle click-through (Ctrl+Alt+P)">🖱️</button>
+          <button class="icon-btn" id="btn-hide" title="Hide overlay (Ctrl+Alt+O)">✕</button>
+        </div>
+      </header>
+
+      <!-- Current focus -->
+      <section class="panel focus-card interactive" id="focus-card">
+        <div class="focus-top">
+          <div class="focus-label">
+            <span class="pulse-dot"></span> FOCUS RIGHT NOW
+          </div>
+          <div class="focus-controls">
+            <button class="focus-mini" id="focus-edit" title="Set a custom focus">✎</button>
+            <button class="focus-mini" id="focus-auto" title="Back to scheduled focus">↻</button>
+          </div>
+        </div>
+        <canvas class="focus-pal" id="focus-pal" width="72" height="56"></canvas>
+        <div class="focus-text" id="focus-text">No task selected</div>
+        <div class="focus-meta" id="focus-meta"></div>
+        <div class="focus-next" id="focus-next"></div>
+        <button class="focus-done-btn" id="focus-done">✓ Mark done</button>
+      </section>
+
+      <!-- Pomodoro -->
+      <section class="panel pomodoro interactive" id="pomodoro">
+        <div class="pomo-phase" id="pomo-phase">WORK</div>
+        <div class="pomo-ring-wrap">
+          <svg class="pomo-ring" viewBox="0 0 120 120">
+            <circle class="ring-bg" cx="60" cy="60" r="52" />
+            <circle class="ring-fg" id="ring-fg" cx="60" cy="60" r="52" />
+          </svg>
+          <div class="pomo-time" id="pomo-time">25:00</div>
+        </div>
+        <div class="pomo-controls">
+          <button class="pomo-btn primary" id="pomo-start">Start</button>
+          <button class="pomo-btn" id="pomo-reset">Reset</button>
+          <button class="pomo-btn" id="pomo-skip">Skip</button>
+        </div>
+        <div class="pomo-count" id="pomo-count">Round 1 · 0 done</div>
+
+        <!-- Lofi music -->
+        <div class="music">
+          <div class="music-row">
+            <button class="pomo-btn music-toggle" id="music-toggle">▶ Lofi</button>
+            <button class="pomo-btn" id="music-next" title="Next track">⏭</button>
+            <input type="range" id="music-vol" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+          <div class="music-now" id="music-now">Built-in lofi loop</div>
+        </div>
+      </section>
+
+      <!-- Add task -->
+      <section class="panel add-task interactive">
+        <input type="text" id="task-input" placeholder="+ Add a task…" maxlength="140" />
+        <button class="add-btn" id="task-add">Add</button>
+      </section>
+
+      <!-- Task groups -->
+      <section class="panel tasks interactive" id="tasks">
+        <div class="task-groups" id="task-groups"></div>
+      </section>
+
+      <footer class="footer interactive">
+        <span id="task-progress">0 / 0 done</span>
+        <span class="hint">Ctrl+Alt+P click-through · Ctrl+Alt+O show/hide</span>
+      </footer>
+    </div>
+
+    <script src="starfield.js"></script>
+    <script src="animals.js"></script>
+    <script src="audio.js"></script>
+    <script src="pomodoro.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>

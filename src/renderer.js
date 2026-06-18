@@ -1,0 +1,597 @@
+'use strict';
+
+// Renderer orchestration: tasks, schedule-driven focus, pomodoro, audio,
+// the focus pal, clickable links, and click-through.
+
+const api = window.overlay;
+
+const GROUPS = [
+  { key: 'local', label: 'MY TASKS', cls: 'group-local' },
+  { key: 'doNow', label: 'DO NOW', cls: 'group-now' },
+  { key: 'priorities', label: 'TOP 5 PRIORITIES', cls: 'group-priorities' },
+  { key: 'doLater', label: 'DO LATER TODAY', cls: 'group-later' },
+  { key: 'defer', label: 'DEFER / MONITOR', cls: 'group-defer' },
+];
+
+const SOURCE_LABEL = {
+  local: 'My task',
+  doNow: 'Do Now',
+  priorities: 'Top Priority',
+  doLater: 'Do Later',
+  defer: 'Deferred',
+};
+
+let settings = { focus: { mode: 'auto' } };
+let planData = {
+  groups: {},
+  local: [],
+  all: [],
+  schedule: [],
+  counts: { total: 0, done: 0 },
+};
+let collapsed = {};
+let pomodoro = null;
+let editingFocus = false;
+
+const el = (id) => document.getElementById(id);
+
+// ---------------- Time helpers ----------------
+
+function minutesNow() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function fmtMin(min) {
+  if (min == null) return '';
+  let h = Math.floor(min / 60) % 24;
+  const m = min % 60;
+  const mer = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 || 12;
+  return `${hh}:${String(m).padStart(2, '0')} ${mer}`;
+}
+
+function currentScheduleBlock() {
+  const now = minutesNow();
+  const blocks = planData.schedule || [];
+  return blocks.find((b) => now >= b.startMin && now < b.endMin) || null;
+}
+
+function nextScheduleBlock() {
+  const now = minutesNow();
+  const blocks = (planData.schedule || [])
+    .slice()
+    .sort((a, b) => a.startMin - b.startMin);
+  return blocks.find((b) => b.startMin > now) || null;
+}
+
+// ---------------- Link / segment rendering ----------------
+
+function appendSegments(container, segments, fallbackText) {
+  if (segments && segments.length) {
+    for (const seg of segments) {
+      if (seg.type === 'link') {
+        const a = document.createElement('a');
+        a.className = 'task-link kind-' + (seg.kind || 'link');
+        a.textContent =
+          (seg.kind === 'pr' ? '🔗 ' : seg.kind === 'work' ? '📋 ' : '') + seg.value;
+        a.href = '#';
+        a.title = seg.url;
+        a.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          api.openLink(seg.url);
+        };
+        container.appendChild(a);
+      } else {
+        container.appendChild(document.createTextNode(seg.value));
+      }
+    }
+  } else {
+    container.appendChild(document.createTextNode(fallbackText || ''));
+  }
+}
+
+// ---------------- Focus logic ----------------
+
+// Resolve what to show in the focus card.
+// Returns { kind:'task'|'schedule'|'custom', id?, icon, segments, text,
+//           sublabel, startMin?, endMin? } or null.
+function computeFocus() {
+  const focus = settings.focus || { mode: 'auto' };
+  const all = planData.all || [];
+
+  if (focus.mode === 'custom' && focus.text) {
+    return {
+      kind: 'custom',
+      icon: '✏️',
+      segments: [{ type: 'text', value: focus.text }],
+      text: focus.text,
+      sublabel: 'Custom focus',
+    };
+  }
+
+  if (focus.mode === 'task' && focus.taskId) {
+    const t = all.find((x) => x.id === focus.taskId && !x.done);
+    if (t) {
+      return {
+        kind: 'task',
+        id: t.id,
+        icon: t.icon,
+        segments: t.segments,
+        text: t.text,
+        sublabel: 'Pinned · ' + (SOURCE_LABEL[t.source] || 'task'),
+      };
+    }
+    // fall through to auto if the pinned task is gone/done
+  }
+
+  // Auto: current schedule block wins.
+  const block = currentScheduleBlock();
+  if (block) {
+    return {
+      kind: 'schedule',
+      id: block.id,
+      icon: block.icon,
+      segments: block.segments,
+      text: block.text,
+      sublabel: `${fmtMin(block.startMin)} – ${fmtMin(block.endMin)}`,
+      notes: block.notes,
+    };
+  }
+
+  // Else first incomplete actionable task.
+  const order = ['doNow', 'priorities', 'local', 'doLater'];
+  for (const key of order) {
+    const list = key === 'local' ? planData.local : planData.groups[key] || [];
+    const hit = (list || []).find((t) => !t.done);
+    if (hit) {
+      return {
+        kind: 'task',
+        id: hit.id,
+        icon: hit.icon,
+        segments: hit.segments,
+        text: hit.text,
+        sublabel: SOURCE_LABEL[hit.source] || '',
+      };
+    }
+  }
+  return null;
+}
+
+function renderFocus() {
+  if (editingFocus) return;
+  const focus = computeFocus();
+  const textEl = el('focus-text');
+  const metaEl = el('focus-meta');
+  const nextEl = el('focus-next');
+  const doneBtn = el('focus-done');
+  const autoBtn = el('focus-auto');
+  const mode = (settings.focus && settings.focus.mode) || 'auto';
+
+  autoBtn.style.display = mode === 'auto' ? 'none' : '';
+
+  textEl.innerHTML = '';
+
+  if (!focus) {
+    window.FocusPal.setActive(false);
+    window.FocusPal.pickFor('done');
+    textEl.textContent = 'All clear — nice work! 🎉';
+    metaEl.textContent = '';
+    nextEl.textContent = '';
+    doneBtn.style.display = 'none';
+    window._focusId = null;
+    return;
+  }
+
+  window.FocusPal.setActive(true);
+  window.FocusPal.pickFor(focus.text);
+
+  if (focus.icon) {
+    const ic = document.createElement('span');
+    ic.className = 'task-icon';
+    ic.textContent = focus.icon;
+    textEl.appendChild(ic);
+  }
+  appendSegments(textEl, focus.segments, focus.text);
+
+  metaEl.textContent = focus.sublabel || '';
+
+  // "Next up" hint from the schedule.
+  const next = nextScheduleBlock();
+  if (next && (focus.kind === 'schedule' || mode === 'auto')) {
+    nextEl.textContent = `Next: ${fmtMin(next.startMin)} · ${next.text}`;
+  } else {
+    nextEl.textContent = '';
+  }
+
+  // Mark-done only makes sense for real tasks.
+  if (focus.kind === 'task' && focus.id) {
+    doneBtn.style.display = '';
+    doneBtn.onclick = async () => {
+      planData = await api.toggleTask(focus.id);
+      rerender();
+    };
+  } else {
+    doneBtn.style.display = 'none';
+  }
+
+  window._focusId = focus.id || null;
+}
+
+function startFocusEdit() {
+  editingFocus = true;
+  const textEl = el('focus-text');
+  const current =
+    settings.focus && settings.focus.mode === 'custom' ? settings.focus.text : '';
+  textEl.innerHTML = '';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'focus-edit-input';
+  input.placeholder = 'What are you actually working on?';
+  input.value = current;
+  textEl.appendChild(input);
+  input.focus();
+  input.select();
+
+  const commit = async () => {
+    const v = input.value.trim();
+    editingFocus = false;
+    if (v) settings = await api.setFocusMode({ mode: 'custom', text: v });
+    rerender();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') commit();
+    if (e.key === 'Escape') {
+      editingFocus = false;
+      rerender();
+    }
+  });
+  input.addEventListener('blur', commit);
+}
+
+// ---------------- Task list ----------------
+
+function taskRow(task, focusId) {
+  const row = document.createElement('div');
+  row.className =
+    'task-item' + (task.done ? ' done' : '') + (task.id === focusId ? ' is-focus' : '');
+
+  const check = document.createElement('button');
+  check.className = 'task-check' + (task.done ? ' checked' : '');
+  check.textContent = task.done ? '✓' : '';
+  check.title = 'Toggle done';
+  check.onclick = async () => {
+    planData = await api.toggleTask(task.id);
+    rerender();
+  };
+
+  const body = document.createElement('div');
+  body.className = 'task-body';
+  const text = document.createElement('div');
+  text.className = 'task-text';
+  if (task.icon) {
+    const ic = document.createElement('span');
+    ic.className = 'task-icon';
+    ic.textContent = task.icon;
+    text.appendChild(ic);
+  }
+  appendSegments(text, task.segments, task.text);
+  body.appendChild(text);
+
+  const actions = document.createElement('div');
+  actions.className = 'task-actions';
+
+  const focusBtn = document.createElement('button');
+  focusBtn.className = 'mini-btn focus-set';
+  focusBtn.textContent = '★';
+  focusBtn.title = 'Pin as current focus';
+  focusBtn.onclick = async () => {
+    settings = await api.setFocusMode({ mode: 'task', taskId: task.id });
+    rerender();
+  };
+  actions.appendChild(focusBtn);
+
+  if (task.origin === 'local') {
+    const editBtn = document.createElement('button');
+    editBtn.className = 'mini-btn';
+    editBtn.textContent = '✎';
+    editBtn.title = 'Edit';
+    editBtn.onclick = () => startInlineEdit(task, text);
+    actions.appendChild(editBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'mini-btn';
+    delBtn.textContent = '🗑';
+    delBtn.title = 'Delete';
+    delBtn.onclick = async () => {
+      planData = await api.removeTask(task.id);
+      rerender();
+    };
+    actions.appendChild(delBtn);
+  }
+
+  row.appendChild(check);
+  row.appendChild(body);
+  row.appendChild(actions);
+  return row;
+}
+
+function startInlineEdit(task, textEl) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = task.text;
+  input.className = 'inline-edit';
+  input.style.cssText =
+    'width:100%;background:rgba(0,0,0,0.3);border:1px solid var(--accent);border-radius:8px;color:var(--ink);font-size:12.5px;padding:4px 6px;font-family:inherit;outline:none;';
+  textEl.replaceWith(input);
+  input.focus();
+  input.select();
+  const save = async () => {
+    const v = input.value.trim();
+    if (v) planData = await api.editTask(task.id, v);
+    rerender();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') rerender();
+  });
+  input.addEventListener('blur', save);
+}
+
+function renderTasks() {
+  const focusId = window._focusId;
+  const container = el('task-groups');
+  container.innerHTML = '';
+
+  let anything = false;
+  for (const g of GROUPS) {
+    const list = g.key === 'local' ? planData.local : planData.groups[g.key] || [];
+    if (!list || list.length === 0) continue;
+    anything = true;
+
+    const group = document.createElement('div');
+    group.className = 'task-group ' + g.cls;
+
+    const head = document.createElement('div');
+    head.className = 'group-head';
+    const isCollapsed = !!collapsed[g.key];
+    const remaining = list.filter((t) => !t.done).length;
+    head.innerHTML =
+      `<span>${isCollapsed ? '▸' : '▾'} ${g.label}</span><span class="chip">${remaining}/${list.length}</span>`;
+    head.onclick = () => {
+      collapsed[g.key] = !collapsed[g.key];
+      renderTasks();
+    };
+    group.appendChild(head);
+
+    if (!isCollapsed) {
+      for (const task of list) group.appendChild(taskRow(task, focusId));
+    }
+    container.appendChild(group);
+  }
+
+  if (!anything) {
+    container.innerHTML =
+      '<div class="empty-msg">No tasks yet.<br/>Add one below or generate today\'s plan with <b>planday</b>. 🐾</div>';
+  }
+
+  const c = planData.counts || { total: 0, done: 0 };
+  el('task-progress').textContent = `${c.done} / ${c.total} done`;
+}
+
+// ---------------- Plan / date ----------------
+
+function renderDate() {
+  const d = planData.date;
+  el('plan-date').textContent = d ? `Plan · ${d}` : 'No plan file found';
+}
+
+function rerender() {
+  renderDate();
+  renderFocus();
+  renderTasks();
+}
+
+// ---------------- Pomodoro UI ----------------
+
+const RING_LEN = 2 * Math.PI * 52;
+
+function fmt(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function setupPomodoro() {
+  pomodoro = window.createPomodoro(
+    {
+      workMin: settings.workMin,
+      breakMin: settings.breakMin,
+      longBreakMin: settings.longBreakMin,
+    },
+    {
+      onTick(remaining, total) {
+        el('pomo-time').textContent = fmt(remaining);
+        const ring = el('ring-fg');
+        const frac = total > 0 ? remaining / total : 0;
+        ring.style.strokeDashoffset = String(RING_LEN * (1 - frac));
+      },
+      onPhase(phase, roundsDone, roundInCycle) {
+        const phaseEl = el('pomo-phase');
+        const ring = el('ring-fg');
+        phaseEl.textContent = phase === 'work' ? 'WORK' : 'BREAK';
+        phaseEl.classList.toggle('break', phase !== 'work');
+        ring.classList.toggle('break', phase !== 'work');
+        el('pomo-count').textContent = `Round ${roundInCycle} · ${roundsDone} done`;
+        updateMood();
+      },
+      onRunning(running) {
+        const btn = el('pomo-start');
+        btn.textContent = running ? 'Pause' : 'Start';
+        btn.classList.toggle('running', running);
+        updateMood();
+      },
+      onChime(type) {
+        chime(type);
+        notify(type);
+        updateMood();
+      },
+    }
+  );
+
+  el('pomo-start').onclick = () => pomodoro.toggle();
+  el('pomo-reset').onclick = () => pomodoro.reset();
+  el('pomo-skip').onclick = () => pomodoro.skip();
+}
+
+function updateMood() {
+  if (!pomodoro) return;
+  const st = pomodoro.getState();
+  let mood = 'idle';
+  if (st.running) mood = st.phase === 'work' ? 'work' : 'break';
+  window.FocusPal.setMood(mood);
+}
+
+function chime() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const notes = [660, 880, 990];
+    notes.forEach((f, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const t = ctx.currentTime + i * 0.16;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.25, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(t);
+      o.stop(t + 0.45);
+    });
+    setTimeout(() => ctx.close(), 1200);
+  } catch {}
+}
+
+function notify(type) {
+  try {
+    const title = type === 'work-done' ? '🌿 Break time!' : '💪 Back to focus!';
+    const body =
+      type === 'work-done'
+        ? 'Work session complete. Stretch and breathe.'
+        : 'Break over — your pixel pal is ready to work!';
+    new Notification(title, { body, silent: true });
+  } catch {}
+}
+
+// ---------------- Music UI ----------------
+
+function setupMusic() {
+  window.LofiAudio.onState((s) => {
+    el('music-toggle').textContent = s.playing ? '⏸ Lofi' : '▶ Lofi';
+    el('music-now').textContent = s.name + (s.count > 1 ? ` (${s.count} tracks)` : '');
+  });
+  window.LofiAudio.init(settings.volume);
+
+  el('music-toggle').onclick = () => window.LofiAudio.toggle();
+  el('music-next').onclick = () => window.LofiAudio.next();
+  const vol = el('music-vol');
+  vol.value = settings.volume;
+  vol.oninput = () => {
+    window.LofiAudio.setVolume(parseFloat(vol.value));
+    api.setSettings({ volume: parseFloat(vol.value) });
+  };
+}
+
+// ---------------- Click-through ----------------
+
+function setupClickThrough() {
+  const btn = el('btn-clickthrough');
+  function reflect() {
+    btn.classList.toggle('active', !!settings.clickThrough);
+    btn.title = settings.clickThrough
+      ? 'Click-through ON (Ctrl+Alt+P)'
+      : 'Click-through OFF (Ctrl+Alt+P)';
+    if (settings.clickThrough) api.setMouseIgnore(true);
+    else api.setMouseIgnore(false);
+  }
+  btn.onclick = async () => {
+    settings = await api.setSettings({ clickThrough: !settings.clickThrough });
+    reflect();
+  };
+
+  let over = false;
+  window.addEventListener('mousemove', (e) => {
+    if (!settings.clickThrough) return;
+    const elem = document.elementFromPoint(e.clientX, e.clientY);
+    const interactive = elem && elem.closest('.interactive');
+    if (!!interactive !== over) {
+      over = !!interactive;
+      api.setMouseIgnore(!over);
+    }
+  });
+
+  reflect();
+  window._reflectClickThrough = reflect;
+}
+
+// ---------------- Boot ----------------
+
+async function boot() {
+  settings = await api.getSettings();
+  planData = await api.getPlan();
+
+  if (window.Starfield) window.Starfield.init(el('starfield'));
+  window.FocusPal.init(el('focus-pal'));
+
+  setupPomodoro();
+  setupMusic();
+  setupClickThrough();
+
+  el('btn-hide').onclick = () => api.hideOverlay();
+  el('focus-edit').onclick = () => startFocusEdit();
+  el('focus-auto').onclick = async () => {
+    settings = await api.setFocusMode({ mode: 'auto' });
+    rerender();
+  };
+
+  const input = el('task-input');
+  const add = async () => {
+    const v = input.value.trim();
+    if (!v) return;
+    input.value = '';
+    planData = await api.addTask(v);
+    rerender();
+  };
+  el('task-add').onclick = add;
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') add();
+  });
+
+  api.onPlanUpdate((data) => {
+    planData = data;
+    rerender();
+  });
+  api.onSettingsUpdate((s) => {
+    settings = { ...settings, ...s };
+    if (window._reflectClickThrough) window._reflectClickThrough();
+    rerender();
+  });
+
+  // Re-evaluate the schedule-driven focus periodically while in auto mode.
+  setInterval(() => {
+    const mode = (settings.focus && settings.focus.mode) || 'auto';
+    if (mode === 'auto' && !editingFocus) {
+      renderFocus();
+      renderTasks();
+    }
+  }, 30000);
+
+  rerender();
+  updateMood();
+}
+
+boot();

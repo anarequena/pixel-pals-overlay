@@ -1,0 +1,25 @@
+{
+  "name": "pixel-pals-overlay",
+  "version": "1.0.0",
+  "description": "A fun always-on-top Windows overlay that shows your daily plan and to-dos with cute pixel animals, a Pomodoro timer, and lofi music.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "keywords": [
+    "electron",
+    "overlay",
+    "pomodoro",
+    "todo",
+    "pixel-art"
+  ],
+  "author": "Ana",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0"
+  },
+  "dependencies": {
+    "koffi": "^3.0.2"
+  }
+}
