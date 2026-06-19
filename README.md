@@ -50,6 +50,30 @@ npm start
 The overlay appears on the right edge of your primary monitor and a 🐾 icon
 appears in the system tray.
 
+## 🖥️ Use it like a normal app (no `npm start`)
+
+After the one-time `npm install`, you don't need the terminal again. Create
+click-to-launch shortcuts:
+
+```powershell
+cd D:\daily-app
+powershell -ExecutionPolicy Bypass -File .\scripts\install-shortcuts.ps1
+```
+
+This adds **Pixel Pals Overlay** to your **Desktop** and **Start Menu**. Both run
+the silent launcher (`Launch Pixel Pals.vbs`) — the app starts with no terminal
+window. You can also just double-click `Launch Pixel Pals.vbs` directly.
+
+- **Auto-start at login:** right-click the tray icon → check **Start with
+  Windows**. It'll be running and docked every time you sign in.
+- **Remove the shortcuts:** `...\install-shortcuts.ps1 -Uninstall`.
+
+> The app still lives in this folder (so your daily plans stay live and you can
+> drop music files into `music/`). If you'd rather have a fully standalone
+> installer/`.exe`, you can add [`electron-builder`](https://www.electron.build/)
+> later — but for personal use the launcher + auto-start above is simpler and
+> keeps the music drop-in folder editable.
+
 ## ⌨️ Shortcuts
 
 | Action | Shortcut |

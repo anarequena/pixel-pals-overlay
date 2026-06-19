@@ -44,6 +44,7 @@ const DEFAULT_SETTINGS = {
   collapsed: false,
   reserveSpace: true,
   ytStations: [],
+  startWithWindows: false,
 };
 
 function loadSettings() {
@@ -288,6 +289,12 @@ function refreshTrayMenu() {
       checked: settings.reserveSpace,
       click: (item) => setReserveSpace(item.checked),
     },
+    {
+      label: 'Start with Windows',
+      type: 'checkbox',
+      checked: settings.startWithWindows,
+      click: (item) => setStartWithWindows(item.checked),
+    },
     { label: 'Reload plan', click: () => pushPlan() },
     { type: 'separator' },
     {
@@ -317,6 +324,29 @@ function setClickThrough(enabled) {
   saveSettings(settings);
   refreshTrayMenu();
   if (win) win.webContents.send('settings:update', settings);
+}
+
+// Register/unregister the app to launch automatically when the user signs in.
+// In dev (unpackaged) we point the login item at electron.exe + the app folder;
+// when packaged, Electron defaults to the built exe.
+function applyLoginItem(enabled) {
+  try {
+    const opts = { openAtLogin: !!enabled };
+    if (!app.isPackaged) {
+      opts.path = process.execPath;
+      opts.args = [path.resolve(__dirname)];
+    }
+    app.setLoginItemSettings(opts);
+  } catch (e) {
+    console.error('Failed to set login item:', e.message);
+  }
+}
+
+function setStartWithWindows(enabled) {
+  settings.startWithWindows = enabled;
+  applyLoginItem(enabled);
+  saveSettings(settings);
+  refreshTrayMenu();
 }
 
 // ---------------- IPC ----------------
@@ -490,6 +520,7 @@ if (!gotLock) {
     createWindow();
     buildTray();
     watchPlan();
+    applyLoginItem(settings.startWithWindows);
 
     globalShortcut.register('CommandOrControl+Alt+P', () => {
       setClickThrough(!settings.clickThrough);
