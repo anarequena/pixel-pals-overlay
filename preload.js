@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('overlay', {
   // Plan + tasks
   getPlan: () => ipcRenderer.invoke('plan:get'),
+  reloadPlan: () => ipcRenderer.invoke('plan:reload'),
   onPlanUpdate: (cb) =>
     ipcRenderer.on('plan:update', (_e, data) => cb(data)),
   addTask: (title) => ipcRenderer.invoke('tasks:add', title),

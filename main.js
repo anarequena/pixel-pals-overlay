@@ -246,16 +246,25 @@ function watchPlan() {
     planWatcher.close();
     planWatcher = null;
   }
-  const file = findLatestPlanFile();
-  if (!file) return;
+  if (!fs.existsSync(DAILY_PLANS_DIR)) return;
   try {
     let debounce = null;
-    planWatcher = fs.watch(path.dirname(file), (eventType, filename) => {
-      if (filename && filename.endsWith('.md')) {
-        clearTimeout(debounce);
-        debounce = setTimeout(() => pushPlan(), 400);
+    // Watch the whole DailyWorkPlans tree (recursive) so a brand-new day's
+    // folder — e.g. DailyPlan-2026-06-22 created while the app is running — is
+    // detected automatically, not just edits to the folder that was newest at
+    // launch. loadPlan() always re-selects the latest day, so a new folder
+    // transparently becomes the active plan.
+    planWatcher = fs.watch(
+      DAILY_PLANS_DIR,
+      { recursive: true },
+      (_eventType, filename) => {
+        const name = filename ? filename.toString() : '';
+        if (name.endsWith('.md')) {
+          clearTimeout(debounce);
+          debounce = setTimeout(() => pushPlan(), 400);
+        }
       }
-    });
+    );
   } catch (err) {
     console.error('Failed to watch plan dir:', err);
   }
@@ -353,6 +362,12 @@ function setStartWithWindows(enabled) {
 
 function registerIpc() {
   ipcMain.handle('plan:get', () => loadPlan());
+  ipcMain.handle('plan:reload', () => {
+    // Re-arm the watcher in case the plans directory was created after launch,
+    // then return the freshly loaded latest plan.
+    watchPlan();
+    return loadPlan();
+  });
   ipcMain.handle('settings:get', () => settings);
 
   ipcMain.handle('settings:set', (_e, patch) => {

@@ -613,6 +613,20 @@ async function boot() {
   setupClickThrough();
 
   el('btn-hide').onclick = () => api.hideOverlay();
+  el('btn-reload').onclick = async () => {
+    const btn = el('btn-reload');
+    btn.classList.add('spin');
+    btn.disabled = true;
+    try {
+      planData = await api.reloadPlan();
+      rerender();
+    } finally {
+      setTimeout(() => {
+        btn.classList.remove('spin');
+        btn.disabled = false;
+      }, 600);
+    }
+  };
   el('focus-edit').onclick = () => startFocusEdit();
   el('focus-auto').onclick = async () => {
     settings = await api.setFocusMode({ mode: 'auto' });
