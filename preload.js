@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('overlay', {
   toggleTask: (id) => ipcRenderer.invoke('tasks:toggle', id),
   editTask: (id, title) => ipcRenderer.invoke('tasks:edit', id, title),
   removeTask: (id) => ipcRenderer.invoke('tasks:remove', id),
+  moveTask: (id, group, beforeId) =>
+    ipcRenderer.invoke('tasks:move', id, group, beforeId),
   setFocusMode: (payload) => ipcRenderer.invoke('focus:set', payload),
   openLink: (url) => ipcRenderer.invoke('link:open', url),
 

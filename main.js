@@ -456,6 +456,30 @@ function registerIpc() {
     }
     return taskStore.removeLocal(id);
   });
+
+  // Move a plan task to another section (or reorder within one) by rewriting the
+  // markdown. Only plan-backed tasks participate; an optional beforeId places the
+  // moved item directly above that task in the destination section.
+  ipcMain.handle('tasks:move', (_e, id, targetGroup, beforeId) => {
+    const valid = ['priorities', 'doNow', 'doLater', 'defer'];
+    const hit = findPlanTask(id);
+    if (hit && currentPlanFile && valid.includes(targetGroup)) {
+      const before = beforeId ? findPlanTask(beforeId) : null;
+      try {
+        planWriter.moveBullet(
+          currentPlanFile,
+          hit.task,
+          targetGroup,
+          planParser.classifyHeading,
+          before ? before.task : null
+        );
+        return loadPlan();
+      } catch (err) {
+        console.error('Failed to move plan task:', err);
+      }
+    }
+    return loadPlan();
+  });
   ipcMain.handle('focus:set', (_e, payload) => {
     settings.focus = payload && typeof payload === 'object' ? payload : { mode: 'auto' };
     saveSettings(settings);

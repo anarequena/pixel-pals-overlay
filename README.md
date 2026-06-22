@@ -28,6 +28,10 @@ music**.
 - **Add / edit / complete / delete** tasks right in the overlay — changes are
   written back into your DailyPlan `.md` file (or saved locally if you have no
   plan yet).
+- **Drag tasks between sections** — grab a plan task and drop it into Do Now,
+  Top 5 Priorities, Do Later, or Defer (or reorder within a section). The move
+  is rewritten into the `.md`, with the Top 5 list auto-renumbered and any
+  embedded links preserved.
 - **One cute pixel pal** 🐱🐰🐸🐥🦊 — a single animal sits on the focus card,
   hopping livelier (💪) during work sessions and dozing (😴) on breaks.
 - **Pomodoro timer** — 25 / 5 cycles (long break every 4th round) with a
@@ -97,7 +101,9 @@ Tasks are merged from two sources:
    written straight back into the markdown file**, so the `.md` stays the single
    source of truth (line endings preserved, numbered priorities auto-renumbered).
    New tasks added with the box land in the **Do Now** section. Editing a plan
-   task opens its raw markdown so embedded PR / work-item links survive.
+   task opens its raw markdown so embedded PR / work-item links survive. **Drag a
+   task onto another section** (or to a new spot within one) to move it — that
+   reorder is written back into the `.md` too.
 2. **In-app tasks** — if no plan file exists yet, anything you add with the
    `+ Add a task…` box is stored locally in Electron's `userData` folder
    (`tasks.json`) until you generate a plan.
@@ -130,7 +136,7 @@ src/
   styles.css       Retro pixel-glass theme
   renderer.js      UI orchestration + schedule focus + links + click-through
   planParser.js    DailyPlan markdown -> tasks + links + time-blocked schedule
-  planWriter.js    Writes task add/edit/delete/done back into the DailyPlan .md
+  planWriter.js    Writes task add/edit/delete/done/move back into the DailyPlan .md
   taskStore.js     Merge plan + local tasks, persist completion
   pomodoro.js      Work/break cycle timer
   audio.js         Procedural lofi generator + music-folder player

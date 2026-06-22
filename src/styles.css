@@ -480,6 +480,26 @@ body {
   transition: background 0.15s;
 }
 .task-item:hover { background: rgba(255, 255, 255, 0.1); }
+.task-item.draggable { cursor: grab; }
+.task-item.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+.task-group.drop-target {
+  outline: 1.5px dashed rgba(255, 143, 217, 0.7);
+  outline-offset: 2px;
+  border-radius: 12px;
+  background: rgba(255, 143, 217, 0.08);
+}
+.drop-empty {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  padding: 8px;
+  margin: 3px 0;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+}
 .task-item.is-focus {
   background: rgba(255, 143, 217, 0.2);
   border: 1px solid rgba(255, 143, 217, 0.5);

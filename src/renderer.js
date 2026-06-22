@@ -32,6 +32,7 @@ let planData = {
 let collapsed = {};
 let pomodoro = null;
 let editingFocus = false;
+let dragId = null;
 
 const el = (id) => document.getElementById(id);
 
@@ -256,6 +257,34 @@ function taskRow(task, focusId) {
   const row = document.createElement('div');
   row.className =
     'task-item' + (task.done ? ' done' : '') + (task.id === focusId ? ' is-focus' : '');
+  row.dataset.id = task.id;
+
+  // Plan tasks can be dragged between sections (Do Now / Priorities / Later /
+  // Defer); the move is written straight back into the .md. Drags started from a
+  // button, link, or the inline-edit input are ignored so those keep working.
+  if (task.origin === 'plan') {
+    row.draggable = true;
+    row.classList.add('draggable');
+    row.addEventListener('dragstart', (e) => {
+      if (e.target.closest('button, a, input')) {
+        e.preventDefault();
+        return;
+      }
+      dragId = task.id;
+      e.dataTransfer.effectAllowed = 'move';
+      try {
+        e.dataTransfer.setData('text/plain', task.id);
+      } catch {}
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => {
+      dragId = null;
+      row.classList.remove('dragging');
+      document
+        .querySelectorAll('.drop-target')
+        .forEach((n) => n.classList.remove('drop-target'));
+    });
+  }
 
   const check = document.createElement('button');
   check.className = 'task-check' + (task.done ? ' checked' : '');
@@ -341,19 +370,59 @@ function startInlineEdit(task, textEl) {
   input.addEventListener('blur', save);
 }
 
+// Resolve which task a drop should land above (returns its id), or null to
+// append at the end of the section, based on the cursor's vertical position.
+function dropBeforeId(groupEl, y) {
+  const rows = Array.from(groupEl.querySelectorAll('.task-item'));
+  for (const r of rows) {
+    const rect = r.getBoundingClientRect();
+    if (y < rect.top + rect.height / 2) return r.dataset.id;
+  }
+  return null;
+}
+
 function renderTasks() {
   const focusId = window._focusId;
   const container = el('task-groups');
   container.innerHTML = '';
 
   let anything = false;
+  const hasPlan = !!planData.planFile;
   for (const g of GROUPS) {
     const list = g.key === 'local' ? planData.local : planData.groups[g.key] || [];
-    if (!list || list.length === 0) continue;
+    const isPlanGroup = g.key !== 'local';
+    // Keep every plan section visible when a plan is loaded so a dragged task can
+    // always be dropped into it — even sections that are currently empty.
+    const keepEmpty = isPlanGroup && hasPlan;
+    if ((!list || list.length === 0) && !keepEmpty) continue;
     anything = true;
 
     const group = document.createElement('div');
     group.className = 'task-group ' + g.cls;
+
+    // Plan sections accept drops so tasks can be dragged in to reorganize them.
+    if (isPlanGroup) {
+      group.addEventListener('dragover', (e) => {
+        if (!dragId) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        group.classList.add('drop-target');
+      });
+      group.addEventListener('dragleave', (e) => {
+        if (!group.contains(e.relatedTarget)) group.classList.remove('drop-target');
+      });
+      group.addEventListener('drop', async (e) => {
+        if (!dragId) return;
+        e.preventDefault();
+        group.classList.remove('drop-target');
+        const id = dragId;
+        dragId = null;
+        let beforeId = dropBeforeId(group, e.clientY);
+        if (beforeId === id) beforeId = null;
+        planData = await api.moveTask(id, g.key, beforeId);
+        rerender();
+      });
+    }
 
     const head = document.createElement('div');
     head.className = 'group-head';
@@ -368,7 +437,14 @@ function renderTasks() {
     group.appendChild(head);
 
     if (!isCollapsed) {
-      for (const task of list) group.appendChild(taskRow(task, focusId));
+      if (list.length) {
+        for (const task of list) group.appendChild(taskRow(task, focusId));
+      } else {
+        const ph = document.createElement('div');
+        ph.className = 'drop-empty';
+        ph.textContent = 'Drop a task here';
+        group.appendChild(ph);
+      }
     }
     container.appendChild(group);
   }
