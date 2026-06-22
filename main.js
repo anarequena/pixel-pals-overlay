@@ -14,6 +14,7 @@ const fs = require('fs');
 const http = require('http');
 
 const planParser = require('./src/planParser');
+const planWriter = require('./src/planWriter');
 const taskStore = require('./src/taskStore');
 const appbar = require('./src/winAppBar');
 
@@ -21,6 +22,7 @@ let win = null;
 let tray = null;
 let planWatcher = null;
 let currentPlanFile = null;
+let currentParsed = null;
 let localServer = null;
 let baseUrl = null;
 
@@ -232,7 +234,19 @@ function loadPlan() {
     }
   }
   currentPlanFile = file;
+  currentParsed = parsed;
   return taskStore.merge(parsed, file);
+}
+
+// Find a plan task (by id) in the most recently parsed plan, returning the
+// info planWriter needs (its line + raw bullet content) plus its group.
+function findPlanTask(id) {
+  if (!currentParsed) return null;
+  for (const key of ['priorities', 'doNow', 'doLater', 'defer']) {
+    const t = (currentParsed[key] || []).find((x) => x.id === id);
+    if (t) return { task: t, group: key };
+  }
+  return null;
 }
 
 function pushPlan() {
@@ -385,13 +399,63 @@ function registerIpc() {
     return settings;
   });
 
+  // Task mutations. When a plan (.md) file is loaded, these write straight back
+  // into the markdown so the file stays the source of truth. Tasks that aren't
+  // in the plan (ad-hoc "My tasks", or any task when no plan file exists) fall
+  // back to the local JSON store.
   ipcMain.handle('tasks:add', (_e, title) => {
-    const data = taskStore.addLocal(title);
-    return data;
+    const text = String(title || '').trim();
+    if (!text) return loadPlan();
+    if (currentPlanFile) {
+      try {
+        planWriter.addBullet(currentPlanFile, 'doNow', text, planParser.classifyHeading);
+        return loadPlan();
+      } catch (err) {
+        console.error('Failed to add task to plan:', err);
+      }
+    }
+    return taskStore.addLocal(text);
   });
-  ipcMain.handle('tasks:toggle', (_e, id) => taskStore.toggleComplete(id));
-  ipcMain.handle('tasks:edit', (_e, id, title) => taskStore.editLocal(id, title));
-  ipcMain.handle('tasks:remove', (_e, id) => taskStore.removeLocal(id));
+
+  ipcMain.handle('tasks:toggle', (_e, id) => {
+    const hit = findPlanTask(id);
+    if (hit && currentPlanFile) {
+      try {
+        planWriter.setDone(currentPlanFile, hit.task.line, hit.task.raw, !hit.task.done);
+        return loadPlan();
+      } catch (err) {
+        console.error('Failed to toggle plan task:', err);
+      }
+    }
+    return taskStore.toggleComplete(id);
+  });
+
+  ipcMain.handle('tasks:edit', (_e, id, title) => {
+    const text = String(title || '').trim();
+    const hit = findPlanTask(id);
+    if (hit && currentPlanFile && text) {
+      try {
+        planWriter.editBullet(currentPlanFile, hit.task.line, hit.task.raw, text);
+        return loadPlan();
+      } catch (err) {
+        console.error('Failed to edit plan task:', err);
+      }
+    }
+    return taskStore.editLocal(id, title);
+  });
+
+  ipcMain.handle('tasks:remove', (_e, id) => {
+    const hit = findPlanTask(id);
+    if (hit && currentPlanFile) {
+      try {
+        planWriter.removeBullet(currentPlanFile, hit.task.line, hit.task.raw);
+        return loadPlan();
+      } catch (err) {
+        console.error('Failed to remove plan task:', err);
+      }
+    }
+    return taskStore.removeLocal(id);
+  });
   ipcMain.handle('focus:set', (_e, payload) => {
     settings.focus = payload && typeof payload === 'object' ? payload : { mode: 'auto' };
     saveSettings(settings);

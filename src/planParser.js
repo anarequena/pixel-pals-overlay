@@ -102,6 +102,11 @@ function buildEntry(source, rawItem, extra) {
     {
       id: `${source}:${slug(text)}`,
       text,
+      // `raw` is the exact bullet content (everything after the list marker) as
+      // it appears in the .md, so it can be written back / edited losslessly.
+      raw: rawItem,
+      // `line` is the 0-based index of this bullet within the md lines array.
+      line: null,
       icon,
       done,
       source,
@@ -208,7 +213,8 @@ function parse(md) {
   if (titleMatch) result.date = titleMatch[1] || titleMatch[2] || null;
 
   let current = null;
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const headingMatch = line.match(/^#{1,6}\s+(.*)$/);
     if (headingMatch) {
       current = classifyHeading(headingMatch[1]);
@@ -223,7 +229,7 @@ function parse(md) {
 
     const bullet = line.match(/^\s*(?:[-*+]|\d+\.)\s+(.*)$/);
     if (bullet && bullet[1].trim()) {
-      const task = buildEntry(current, bullet[1]);
+      const task = buildEntry(current, bullet[1], { line: i });
       if (task.text) result[current].push(task);
     }
   }
@@ -241,4 +247,4 @@ function parse(md) {
   return result;
 }
 
-module.exports = { parse, slug, tokenize, parseSchedule };
+module.exports = { parse, slug, tokenize, parseSchedule, classifyHeading };

@@ -38,11 +38,15 @@ function persist() {
   }
 }
 
-function effDone(task) {
-  if (Object.prototype.hasOwnProperty.call(store.completed, task.id)) {
-    return !!store.completed[task.id];
+// Local ("My tasks") only — plan tasks are toggled in the .md by the main
+// process via planWriter, not here.
+function toggleComplete(id) {
+  const idx = store.local.findIndex((t) => t.id === id);
+  if (idx >= 0) {
+    store.local[idx].done = !store.local[idx].done;
+    persist();
   }
-  return !!task.done;
+  return remerge();
 }
 
 function merge(parsed, file) {
@@ -54,7 +58,9 @@ function merge(parsed, file) {
 
   for (const key of Object.keys(groups)) {
     for (const t of lastParsed[key] || []) {
-      const task = { ...t, done: effDone(t) };
+      // Plan tasks are backed by the .md file, which is the source of truth for
+      // their done-state, so trust the parsed value directly.
+      const task = { ...t, done: !!t.done };
       groups[key].push(task);
       cache.set(task.id, task);
     }
@@ -90,19 +96,6 @@ function merge(parsed, file) {
 
 function remerge() {
   return merge(lastParsed, lastFile);
-}
-
-function toggleComplete(id) {
-  const localIdx = store.local.findIndex((t) => t.id === id);
-  if (localIdx >= 0) {
-    store.local[localIdx].done = !store.local[localIdx].done;
-  } else {
-    const cached = cache.get(id);
-    const currentlyDone = cached ? cached.done : false;
-    store.completed[id] = !currentlyDone;
-  }
-  persist();
-  return remerge();
 }
 
 function addLocal(title) {

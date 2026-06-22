@@ -25,7 +25,9 @@ music**.
   Schedule** to auto-pick what you should be working on *right now*, and shows
   what's next. Doing something unplanned? Hit ✎ to type a custom focus, ★ to pin
   a specific task, or ↻ to snap back to the schedule.
-- **Add / edit / complete** your own tasks right in the overlay (saved locally).
+- **Add / edit / complete / delete** tasks right in the overlay — changes are
+  written back into your DailyPlan `.md` file (or saved locally if you have no
+  plan yet).
 - **One cute pixel pal** 🐱🐰🐸🐥🦊 — a single animal sits on the focus card,
   hopping livelier (💪) during work sessions and dozing (😴) on breaks.
 - **Pomodoro timer** — 25 / 5 cycles (long break every 4th round) with a
@@ -90,10 +92,15 @@ Tasks are merged from two sources:
 1. **Your DailyPlan file** — the newest
    `…\Documents\DailyWorkPlans\DailyPlan-YYYY-MM-DD\DailyPlan-YYYY-MM-DD.md`.
    Generate one anytime with your `planday` workflow. Edits to the file show up
-   in the overlay within a moment (live file watching).
-2. **In-app tasks** — anything you add with the `+ Add a task…` box, stored in
-   Electron's `userData` folder (`tasks.json`). Completing a plan task is also
-   remembered there, so checking things off never edits your markdown.
+   in the overlay within a moment (live file watching). **You can now add, edit,
+   check off, and delete plan tasks right from the overlay — every change is
+   written straight back into the markdown file**, so the `.md` stays the single
+   source of truth (line endings preserved, numbered priorities auto-renumbered).
+   New tasks added with the box land in the **Do Now** section. Editing a plan
+   task opens its raw markdown so embedded PR / work-item links survive.
+2. **In-app tasks** — if no plan file exists yet, anything you add with the
+   `+ Add a task…` box is stored locally in Electron's `userData` folder
+   (`tasks.json`) until you generate a plan.
 
 ## 🎵 Music
 
@@ -123,6 +130,7 @@ src/
   styles.css       Retro pixel-glass theme
   renderer.js      UI orchestration + schedule focus + links + click-through
   planParser.js    DailyPlan markdown -> tasks + links + time-blocked schedule
+  planWriter.js    Writes task add/edit/delete/done back into the DailyPlan .md
   taskStore.js     Merge plan + local tasks, persist completion
   pomodoro.js      Work/break cycle timer
   audio.js         Procedural lofi generator + music-folder player

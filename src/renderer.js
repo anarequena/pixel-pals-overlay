@@ -292,18 +292,18 @@ function taskRow(task, focusId) {
   };
   actions.appendChild(focusBtn);
 
-  if (task.origin === 'local') {
+  if (task.origin === 'local' || task.origin === 'plan') {
     const editBtn = document.createElement('button');
     editBtn.className = 'mini-btn';
     editBtn.textContent = '✎';
-    editBtn.title = 'Edit';
+    editBtn.title = task.origin === 'plan' ? 'Edit (markdown — links allowed)' : 'Edit';
     editBtn.onclick = () => startInlineEdit(task, text);
     actions.appendChild(editBtn);
 
     const delBtn = document.createElement('button');
     delBtn.className = 'mini-btn';
     delBtn.textContent = '🗑';
-    delBtn.title = 'Delete';
+    delBtn.title = task.origin === 'plan' ? 'Delete from plan' : 'Delete';
     delBtn.onclick = async () => {
       planData = await api.removeTask(task.id);
       rerender();
@@ -320,7 +320,9 @@ function taskRow(task, focusId) {
 function startInlineEdit(task, textEl) {
   const input = document.createElement('input');
   input.type = 'text';
-  input.value = task.text;
+  // Plan tasks edit their raw markdown so embedded PR / work-item links survive
+  // the round-trip; local tasks just edit their plain text.
+  input.value = task.origin === 'plan' ? task.raw || task.text : task.text;
   input.className = 'inline-edit';
   input.style.cssText =
     'width:100%;background:rgba(0,0,0,0.3);border:1px solid var(--accent);border-radius:8px;color:var(--ink);font-size:12.5px;padding:4px 6px;font-family:inherit;outline:none;';
