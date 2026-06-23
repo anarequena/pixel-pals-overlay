@@ -137,6 +137,35 @@ function createWindow() {
     win = null;
   });
 
+  // Auto-recover a crashed/unresponsive renderer so the overlay never gets
+  // stuck as a blank, un-showable window (the single-instance shortcut can
+  // only re-show an existing window, not rebuild a dead one).
+  let lastRecover = 0;
+  let recoverCount = 0;
+  const recoverRenderer = (why) => {
+    if (!win || win.isDestroyed()) return;
+    const now = Date.now();
+    if (now - lastRecover > 60000) recoverCount = 0; // reset window every minute
+    if (recoverCount >= 3) {
+      console.log('[recover] giving up after repeated renderer failures:', why);
+      return;
+    }
+    lastRecover = now;
+    recoverCount += 1;
+    console.log(`[recover] reloading renderer (${why}), attempt ${recoverCount}`);
+    try {
+      win.webContents.reload();
+    } catch (e) {
+      console.log('[recover] reload failed', e && e.message);
+    }
+  };
+
+  win.webContents.on('render-process-gone', (_e, details) => {
+    if (details && (details.reason === 'clean-exit' || details.reason === 'killed')) return;
+    recoverRenderer('render-process-gone:' + (details && details.reason));
+  });
+  win.on('unresponsive', () => recoverRenderer('unresponsive'));
+
   if (process.argv.includes('--diag')) {
     win.webContents.on('did-finish-load', () =>
       console.log('[diag] renderer loaded OK')
