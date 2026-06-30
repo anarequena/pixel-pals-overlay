@@ -14,7 +14,11 @@ music**.
   screen height. Drag the header to nudge it.
 - **Reserves screen space (docking)** — registers as a Windows **AppBar**, so
   maximized / snapped windows stop at the overlay's edge instead of sliding
-  underneath it. Toggle it from the tray ("Reserve screen space").
+  underneath it. Toggle it from the tray ("Reserve screen space"). The
+  reservation is **self-healing**: if Windows clears it (a full-screen app,
+  sleep/wake, or a resolution change), the overlay detects the loss and
+  re-reserves the strip automatically, so it keeps pushing other windows over
+  even after running for days.
 - **Live daily plan** — automatically reads your latest
   `DailyPlan-YYYY-MM-DD.md` from your `DailyWorkPlans` folder and live-reloads
   whenever the file changes. Parses **Top 5 Priorities**, **Do Now**,

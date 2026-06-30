@@ -8,6 +8,7 @@ const {
   shell,
   globalShortcut,
   nativeImage,
+  powerMonitor,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -221,6 +222,38 @@ function applyAppBar() {
     else appbar.register(win.getNativeWindowHandle(), rc);
   } else if (appbar.isRegistered()) {
     appbar.remove();
+  }
+}
+
+// Windows can silently drop an AppBar's reserved space over the life of a
+// long-running instance: a full-screen app, monitor sleep/wake, RDP, or a
+// resolution change all clear the reservation, and because we register with
+// uCallbackMessage = 0 we never get the ABN_* notifications that would let us
+// react. The symptom is "it reserved space at first but stopped pushing other
+// windows over." To stay robust we periodically re-assert the reservation and
+// also re-assert on the events most likely to have cleared it. Re-asserting is
+// a no-op when the strip is already reserved (no windows move); it only resizes
+// other windows back when the reservation had actually been lost.
+let appBarKeepAlive = null;
+
+function reassertAppBar() {
+  if (!win || win.isDestroyed()) return;
+  if (!settings.reserveSpace) return;
+  if (!win.isVisible()) return; // don't fight other windows while hidden
+  const rc = getAppBarRectPhysical();
+  if (appbar.isRegistered()) appbar.ensureReserved(rc);
+  else appbar.register(win.getNativeWindowHandle(), rc);
+}
+
+function startAppBarKeepAlive() {
+  if (appBarKeepAlive) return;
+  appBarKeepAlive = setInterval(reassertAppBar, 10000);
+}
+
+function stopAppBarKeepAlive() {
+  if (appBarKeepAlive) {
+    clearInterval(appBarKeepAlive);
+    appBarKeepAlive = null;
   }
 }
 
@@ -660,6 +693,15 @@ if (!gotLock) {
     globalShortcut.register('CommandOrControl+Alt+O', () => toggleVisible());
 
     screen.on('display-metrics-changed', repositionWindow);
+    screen.on('display-added', repositionWindow);
+    screen.on('display-removed', repositionWindow);
+
+    // Re-assert the AppBar reservation after the events that most commonly
+    // clear it, so the overlay keeps pushing other windows over.
+    powerMonitor.on('resume', repositionWindow);
+    powerMonitor.on('unlock-screen', reassertAppBar);
+    if (win) win.on('show', reassertAppBar);
+    startAppBarKeepAlive();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -672,6 +714,7 @@ if (!gotLock) {
 
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
+    stopAppBarKeepAlive();
     if (planWatcher) planWatcher.close();
     if (localServer) { try { localServer.close(); } catch {} }
     appbar.remove();
