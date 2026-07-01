@@ -138,6 +138,20 @@ function createWindow() {
     win = null;
   });
 
+  // Hiding the overlay (the "X" button, Ctrl+Alt+O, or the tray "Hide" item)
+  // keeps the app alive in the tray, so it must release the reserved strip —
+  // otherwise an empty gap stays on screen with nothing in it. Showing again
+  // re-reserves it. This makes "X" behave like closing from the user's view
+  // without actually quitting the tray app.
+  win.on('hide', () => {
+    if (appbar.isRegistered()) appbar.remove();
+    refreshTrayMenu();
+  });
+  win.on('show', () => {
+    reassertAppBar();
+    refreshTrayMenu();
+  });
+
   // Auto-recover a crashed/unresponsive renderer so the overlay never gets
   // stuck as a blank, un-showable window (the single-instance shortcut can
   // only re-show an existing window, not rebuild a dead one).
@@ -219,6 +233,13 @@ let appBarCleaned = false;
 function applyAppBar() {
   if (!win) return;
   if (settings.reserveSpace) {
+    // Never (re-)reserve while the overlay is hidden. Hiding releases the strip
+    // (see the win 'hide' handler); releasing changes the work area, which fires
+    // display-metrics-changed -> repositionWindow -> here. Without this guard we
+    // would immediately re-reserve the strip we just released, leaving an empty
+    // gap on screen while the app sits in the tray. Showing re-reserves via the
+    // 'show' handler.
+    if (!win.isVisible()) return;
     const rc = getAppBarRectPhysical();
     if (appbar.isRegistered()) {
       appbar.update(rc);
@@ -718,7 +739,6 @@ if (!gotLock) {
     // clear it, so the overlay keeps pushing other windows over.
     powerMonitor.on('resume', repositionWindow);
     powerMonitor.on('unlock-screen', reassertAppBar);
-    if (win) win.on('show', reassertAppBar);
     startAppBarKeepAlive();
 
     app.on('activate', () => {
