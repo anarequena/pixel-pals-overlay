@@ -18,7 +18,11 @@ music**.
   reservation is **self-healing**: if Windows clears it (a full-screen app,
   sleep/wake, or a resolution change), the overlay detects the loss and
   re-reserves the strip automatically, so it keeps pushing other windows over
-  even after running for days.
+  even after running for days. It also **cleans up after itself**: releasing the
+  strip is verified on quit, and if a previous run was force-killed or crashed
+  (leaving the reserved strip stuck on screen), the next launch clears the
+  orphaned reservation before re-registering — so the right edge never stays
+  blocked once the app is closed.
 - **Live daily plan** — automatically reads your latest
   `DailyPlan-YYYY-MM-DD.md` from your `DailyWorkPlans` folder and live-reloads
   whenever the file changes. Parses **Top 5 Priorities**, **Do Now**,

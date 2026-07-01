@@ -214,14 +214,32 @@ function getAppBarRectPhysical() {
   };
 }
 
+let appBarCleaned = false;
+
 function applyAppBar() {
   if (!win) return;
   if (settings.reserveSpace) {
     const rc = getAppBarRectPhysical();
-    if (appbar.isRegistered()) appbar.update(rc);
-    else appbar.register(win.getNativeWindowHandle(), rc);
+    if (appbar.isRegistered()) {
+      appbar.update(rc);
+    } else {
+      // First registration this run: clear any strip orphaned by a previous
+      // crash / force-kill (which never sent ABM_REMOVE) so we start clean and
+      // don't stack a second reservation on top of the stale one.
+      if (!appBarCleaned) {
+        appbar.cleanupOrphan(rc);
+        appBarCleaned = true;
+      }
+      appbar.register(win.getNativeWindowHandle(), rc);
+    }
   } else if (appbar.isRegistered()) {
     appbar.remove();
+  } else if (!appBarCleaned) {
+    // Reserve-space is OFF but a previous run may have left a stuck strip.
+    // Clear it once on startup so "the reserved space is stuck even with the
+    // app closed/disabled" self-heals on next launch.
+    appbar.cleanupOrphan(getAppBarRectPhysical());
+    appBarCleaned = true;
   }
 }
 

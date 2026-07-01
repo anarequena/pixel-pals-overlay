@@ -23,9 +23,14 @@ const ABM_SETPOS = 0x00000003;
 const ABE_RIGHT = 2;
 // SystemParametersInfo
 const SPI_GETWORKAREA = 0x0030;
+const SPI_SETWORKAREA = 0x002f;
+const SPIF_SENDCHANGE = 0x0002;
 
 let registered = false;
 let handleVal = null;
+// Remember the last strip we reserved so we can verify/undo it even after the
+// owning window is gone (used to detect and clear an orphaned reservation).
+let lastRc = null;
 
 function tryInit() {
   if (koffi) return available;
@@ -95,6 +100,7 @@ function commitPos(rcPhys) {
     bottom: data.rc.bottom || rcPhys.bottom,
   };
   SHAppBarMessage(ABM_SETPOS, data);
+  lastRc = { ...rcPhys };
 }
 
 function register(handleBuffer, rcPhys) {
@@ -136,6 +142,23 @@ function getWorkArea() {
   } catch (err) {
     console.error('[appbar] getWorkArea failed:', err.message);
     return null;
+  }
+}
+
+// Force the primary monitor's work-area right edge to `right` (physical px),
+// preserving the current top/bottom (so the taskbar's own reservation on other
+// edges isn't clobbered). This is the reliable way to release a reservation the
+// shell is still holding (e.g. an orphan left by a crashed/force-killed run).
+function setWorkAreaRight(right) {
+  if (!tryInit() || !SystemParametersInfo) return false;
+  const wa = getWorkArea();
+  if (!wa) return false;
+  try {
+    const rc = { left: wa.left, top: wa.top, right, bottom: wa.bottom };
+    return !!SystemParametersInfo(SPI_SETWORKAREA, 0, rc, SPIF_SENDCHANGE);
+  } catch (err) {
+    console.error('[appbar] setWorkAreaRight failed:', err.message);
+    return false;
   }
 }
 
@@ -185,10 +208,47 @@ function remove() {
   } finally {
     registered = false;
   }
+  // Belt-and-suspenders: verify the shell actually reclaimed the strip. If the
+  // right edge is still pulled in (ABM_REMOVE didn't fully release, or the
+  // registration was in a weird state), reset the work area to the screen edge
+  // so we never leave a stuck strip behind.
+  try {
+    const rc = lastRc;
+    if (rc) {
+      const wa = getWorkArea();
+      if (wa && wa.right < rc.right - 2) {
+        setWorkAreaRight(rc.right);
+      }
+    }
+  } catch (err) {
+    console.error('[appbar] remove verify failed:', err.message);
+  }
 }
+
+// Clear a reservation orphaned by a previous crash/force-kill of this app.
+// Called on startup BEFORE we register. If the right edge of the work area is
+// pulled in by roughly our strip width but we haven't registered anything yet,
+// that space belongs to a dead instance — reset it to the screen edge so we
+// start from a clean baseline (and so a stuck strip is fixed just by relaunching).
+// rcPhys describes the strip we would reserve (rcPhys.right == screen right edge).
+function cleanupOrphan(rcPhys) {
+  if (!tryInit() || !SystemParametersInfo) return false;
+  if (registered) return false; // only meaningful before we own a reservation
+  const wa = getWorkArea();
+  if (!wa) return false;
+  const stripWidth = rcPhys.right - rcPhys.left;
+  const currentGap = rcPhys.right - wa.right; // reserved px on the right
+  // Only reset when there IS a reservation and it's within ~2x our strip width
+  // (i.e. plausibly ours). Don't touch a legitimately different desktop layout.
+  if (currentGap > 2 && currentGap <= stripWidth * 2 + 4) {
+    return setWorkAreaRight(rcPhys.right);
+  }
+  return false;
+}
+
 
 function isRegistered() {
   return registered;
 }
 
-module.exports = { register, update, remove, isRegistered, ensureReserved, getWorkArea };
+module.exports = { register, update, remove, isRegistered, ensureReserved, getWorkArea, cleanupOrphan, setWorkAreaRight };
