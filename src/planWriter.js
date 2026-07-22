@@ -16,6 +16,7 @@ const DONE_RE = /^✅\s*/;
 
 const SECTION_LABEL = {
   priorities: "🎯 Today's Top 5 Priorities",
+  active: '🔵 Active Items',
   doNow: '🟢 Do Now',
   doLater: '🟡 Do Later Today',
   defer: '⏳ Defer / Monitor',
@@ -270,4 +271,108 @@ function moveBullet(file, src, targetGroup, classify, before) {
   return true;
 }
 
-module.exports = { setDone, editBullet, removeBullet, addBullet, moveBullet, SECTION_LABEL };
+// ---------------- Backlog / Ignored file writers ----------------
+
+function escapeRe(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Flip an aging/learning item's status (open|done|parked) inside Backlog.md or
+// LearningPlan.md by rewriting its metadata comment's `status:` token, and check
+// the item's checkbox when it is marked done. Located by its stable `id:` slug.
+function setBacklogStatus(file, idSlug, status) {
+  const slug = String(idSlug || '').trim();
+  if (!slug) return false;
+  const { lines, eol, trailingNewline } = readFile(file);
+  const idRe = new RegExp('\\bid:' + escapeRe(slug) + '\\b');
+
+  let metaIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/<!--/.test(lines[i]) && idRe.test(lines[i])) {
+      metaIdx = i;
+      break;
+    }
+  }
+  if (metaIdx < 0) return false;
+
+  if (/\bstatus:\S*/.test(lines[metaIdx])) {
+    lines[metaIdx] = lines[metaIdx].replace(/\bstatus:\S*/, 'status:' + status);
+  } else {
+    lines[metaIdx] = lines[metaIdx].replace(/\s*-->/, ` status:${status} -->`);
+  }
+
+  // Toggle the checkbox on the owning bullet (search upward from the metadata).
+  for (let i = metaIdx; i >= 0 && i >= metaIdx - 3; i--) {
+    const cb = lines[i].match(/^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\]/);
+    if (cb) {
+      const mark = status === 'done' ? 'x' : ' ';
+      lines[i] = lines[i].replace(/^(\s*(?:[-*+]|\d+\.)\s+)\[[ xX]\]/, `$1[${mark}]`);
+      break;
+    }
+  }
+
+  writeFile(file, lines, eol, trailingNewline);
+  return true;
+}
+
+// Append a suppression entry to Backlog.md's `# Ignored` section. `key` is a
+// match key (pr:<id> / wi:<id> / id:<slug>); duplicates (same key) are skipped.
+function appendIgnore(file, key, label, reason) {
+  const matchKey = String(key || '').trim();
+  if (!matchKey) return false;
+  const { lines, eol, trailingNewline } = readFile(file);
+
+  let headIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const h = lines[i].match(HEADING_RE);
+    if (h && /ignore/i.test(h[1])) {
+      headIdx = i;
+      break;
+    }
+  }
+  if (headIdx < 0) {
+    if (lines.length && lines[lines.length - 1].trim() !== '') lines.push('');
+    lines.push('# Ignored');
+    headIdx = lines.length - 1;
+  }
+
+  // Section bounds: from just after the heading to the next heading (else EOF).
+  let end = lines.length;
+  for (let i = headIdx + 1; i < lines.length; i++) {
+    if (HEADING_RE.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+
+  // Only treat the key as a duplicate if it already appears WITHIN the Ignored
+  // section — the same key (e.g. id:<slug>) legitimately exists on the item's
+  // own metadata in the Aging section.
+  const keyRe = new RegExp('\\b' + escapeRe(matchKey) + '\\b');
+  for (let i = headIdx + 1; i < end; i++) {
+    if (/<!--/.test(lines[i]) && keyRe.test(lines[i])) return true;
+  }
+
+  // Insert after the last non-blank line of the Ignored section.
+  let insertAt = end;
+  while (insertAt - 1 > headIdx && lines[insertAt - 1].trim() === '') insertAt--;
+
+  const cleanLabel = String(label || matchKey).replace(/\s+/g, ' ').trim();
+  const comment = reason
+    ? `  <!-- ${matchKey} reason:${String(reason).replace(/\s+/g, '-')} -->`
+    : `  <!-- ${matchKey} -->`;
+  lines.splice(insertAt, 0, `- ${cleanLabel}`, comment);
+  writeFile(file, lines, eol, trailingNewline);
+  return true;
+}
+
+module.exports = {
+  setDone,
+  editBullet,
+  removeBullet,
+  addBullet,
+  moveBullet,
+  setBacklogStatus,
+  appendIgnore,
+  SECTION_LABEL,
+};

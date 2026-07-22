@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('overlay', {
   setFocusMode: (payload) => ipcRenderer.invoke('focus:set', payload),
   openLink: (url) => ipcRenderer.invoke('link:open', url),
 
+  // Backlog (aging + learning)
+  promoteBacklog: (id, group) => ipcRenderer.invoke('backlog:promote', id, group),
+  markBacklogDone: (id) => ipcRenderer.invoke('backlog:markDone', id),
+  ignoreBacklog: (id, reason) => ipcRenderer.invoke('backlog:ignore', id, reason),
+
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),

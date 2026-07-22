@@ -45,6 +45,15 @@
         <button class="focus-done-btn" id="focus-done">✓ Mark done</button>
       </section>
 
+      <!-- Timeline (auto-advancing focus follows this schedule) -->
+      <section class="panel timeline interactive" id="timeline">
+        <div class="timeline-head">
+          <span>⏱ TIMELINE</span>
+          <span class="chip" id="timeline-chip"></span>
+        </div>
+        <div class="timeline-list" id="timeline-list"></div>
+      </section>
+
       <!-- Pomodoro -->
       <section class="panel pomodoro interactive" id="pomodoro">
         <div class="pomo-phase" id="pomo-phase">WORK</div>
@@ -87,6 +96,15 @@
       <!-- Task groups -->
       <section class="panel tasks interactive" id="tasks">
         <div class="task-groups" id="task-groups"></div>
+      </section>
+
+      <!-- Backlog (aging + learning) -->
+      <section class="panel backlog interactive" id="backlog">
+        <div class="backlog-head">
+          <span>🗂 BACKLOG <span class="backlog-legend">⏳ aging · 📘 learning</span></span>
+          <span class="chip" id="backlog-chip">0</span>
+        </div>
+        <div class="backlog-list" id="backlog-list"></div>
       </section>
 
       <footer class="footer interactive">

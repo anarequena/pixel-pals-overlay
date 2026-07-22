@@ -6,17 +6,19 @@
 const api = window.overlay;
 
 const GROUPS = [
-  { key: 'local', label: 'MY TASKS', cls: 'group-local' },
+  { key: 'priorities', label: 'TOP 5 (yours)', cls: 'group-priorities', primary: true },
+  { key: 'active', label: 'ACTIVE', cls: 'group-active', primary: true },
   { key: 'doNow', label: 'DO NOW', cls: 'group-now' },
-  { key: 'priorities', label: 'TOP 5 PRIORITIES', cls: 'group-priorities' },
   { key: 'doLater', label: 'DO LATER TODAY', cls: 'group-later' },
   { key: 'defer', label: 'DEFER / MONITOR', cls: 'group-defer' },
+  { key: 'local', label: 'MY TASKS', cls: 'group-local' },
 ];
 
 const SOURCE_LABEL = {
   local: 'My task',
   doNow: 'Do Now',
   priorities: 'Top Priority',
+  active: 'Active',
   doLater: 'Do Later',
   defer: 'Deferred',
 };
@@ -142,7 +144,7 @@ function computeFocus() {
   }
 
   // Else first incomplete actionable task.
-  const order = ['doNow', 'priorities', 'local', 'doLater'];
+  const order = ['priorities', 'active', 'doNow', 'local', 'doLater'];
   for (const key of order) {
     const list = key === 'local' ? planData.local : planData.groups[key] || [];
     const hit = (list || []).find((t) => !t.done);
@@ -391,9 +393,10 @@ function renderTasks() {
   for (const g of GROUPS) {
     const list = g.key === 'local' ? planData.local : planData.groups[g.key] || [];
     const isPlanGroup = g.key !== 'local';
-    // Keep every plan section visible when a plan is loaded so a dragged task can
-    // always be dropped into it — even sections that are currently empty.
-    const keepEmpty = isPlanGroup && hasPlan;
+    // Keep only the primary sections (Top 5 / Active) visible when empty so a
+    // dragged task can always be dropped into them. Legacy Do-Now/Later/Defer
+    // sections and local tasks only appear when they actually hold something.
+    const keepEmpty = g.primary && hasPlan;
     if ((!list || list.length === 0) && !keepEmpty) continue;
     anything = true;
 
@@ -458,6 +461,181 @@ function renderTasks() {
   el('task-progress').textContent = `${c.done} / ${c.total} done`;
 }
 
+// ---------------- Timeline ----------------
+
+// Render the time-blocked schedule as a compact list. The block covering the
+// current time is marked NOW; the first future block is NEXT; past blocks dim.
+// This is the auto-focus driver — the focus card follows whatever is NOW unless
+// the user has pinned a custom/task focus (✎ / ★), which stays respected.
+function renderTimeline() {
+  const listEl = el('timeline-list');
+  const chip = el('timeline-chip');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  const blocks = (planData.schedule || [])
+    .slice()
+    .sort((a, b) => a.startMin - b.startMin);
+
+  if (!blocks.length) {
+    listEl.innerHTML = '<div class="timeline-empty">No schedule in today\'s plan.</div>';
+    if (chip) chip.textContent = '';
+    return;
+  }
+
+  const now = minutesNow();
+  const nowBlock = blocks.find((b) => now >= b.startMin && now < b.endMin) || null;
+  const nextBlock = blocks.find((b) => b.startMin > now) || null;
+  if (chip) chip.textContent = nowBlock ? 'now ' + fmtMin(nowBlock.startMin) : '';
+
+  for (const b of blocks) {
+    const row = document.createElement('div');
+    let state = 'upcoming';
+    if (b === nowBlock) state = 'now';
+    else if (b.endMin <= now) state = 'past';
+    else if (b === nextBlock) state = 'next';
+    row.className = 'tl-row tl-' + state;
+
+    const marker = document.createElement('span');
+    marker.className = 'tl-marker';
+    marker.textContent = state === 'now' ? '▸ NOW' : state === 'next' ? 'NEXT' : '';
+
+    const time = document.createElement('span');
+    time.className = 'tl-time';
+    time.textContent = `${fmtMin(b.startMin)}–${fmtMin(b.endMin)}`;
+
+    const label = document.createElement('span');
+    label.className = 'tl-label';
+    if (b.icon) {
+      const ic = document.createElement('span');
+      ic.className = 'task-icon';
+      ic.textContent = b.icon;
+      label.appendChild(ic);
+    }
+    appendSegments(label, b.segments, b.text);
+
+    row.appendChild(marker);
+    row.appendChild(time);
+    row.appendChild(label);
+    listEl.appendChild(row);
+  }
+}
+
+// ---------------- Backlog panel ----------------
+
+// Format an aging badge from an item's age (consecutive carried days).
+function agingBadge(item) {
+  if (item.source === 'learning') {
+    return { text: '📘', cls: 'badge-learn', title: 'Learning item' };
+  }
+  const d = item.age != null ? item.age : item.meta && +item.meta.carried;
+  const n = Number.isFinite(d) ? d : 0;
+  let cls = 'badge-age';
+  if (n >= 7) cls += ' badge-hot';
+  else if (n >= 4) cls += ' badge-warm';
+  return { text: `⏳${n}d`, cls, title: `Aging ${n} day${n === 1 ? '' : 's'}` };
+}
+
+function backlogRow(item) {
+  const row = document.createElement('div');
+  row.className = 'backlog-item';
+  row.dataset.id = item.id;
+
+  const badge = agingBadge(item);
+  const b = document.createElement('span');
+  b.className = 'backlog-badge ' + badge.cls;
+  b.textContent = badge.text;
+  b.title = badge.title;
+  row.appendChild(b);
+
+  const body = document.createElement('div');
+  body.className = 'backlog-body';
+  const text = document.createElement('div');
+  text.className = 'backlog-text';
+  if (item.icon) {
+    const ic = document.createElement('span');
+    ic.className = 'task-icon';
+    ic.textContent = item.icon;
+    text.appendChild(ic);
+  }
+  appendSegments(text, item.segments, item.text);
+  body.appendChild(text);
+
+  // Deadline hint when close.
+  if (item.deadlineDays != null && item.deadlineDays <= 7) {
+    const dl = document.createElement('div');
+    dl.className = 'backlog-deadline' + (item.deadlineDays <= 3 ? ' urgent' : '');
+    dl.textContent =
+      item.deadlineDays < 0
+        ? `overdue ${-item.deadlineDays}d`
+        : item.deadlineDays === 0
+          ? 'due today'
+          : `due in ${item.deadlineDays}d`;
+    body.appendChild(dl);
+  }
+  row.appendChild(body);
+
+  const actions = document.createElement('div');
+  actions.className = 'backlog-actions';
+
+  const promote = document.createElement('button');
+  promote.className = 'mini-btn backlog-promote';
+  promote.textContent = '↑';
+  promote.title = 'Promote into today (Active)';
+  promote.onclick = async () => {
+    planData = await api.promoteBacklog(item.id, 'active');
+    rerender();
+  };
+
+  const done = document.createElement('button');
+  done.className = 'mini-btn';
+  done.textContent = '✓';
+  done.title = 'Mark done';
+  done.onclick = async () => {
+    planData = await api.markBacklogDone(item.id);
+    rerender();
+  };
+
+  const ignore = document.createElement('button');
+  ignore.className = 'mini-btn backlog-ignore';
+  ignore.textContent = '🚫';
+  ignore.title = 'Ignore (suppress everywhere)';
+  ignore.onclick = async () => {
+    planData = await api.ignoreBacklog(item.id, 'ignored from overlay');
+    rerender();
+  };
+
+  actions.appendChild(promote);
+  actions.appendChild(done);
+  actions.appendChild(ignore);
+  row.appendChild(actions);
+  return row;
+}
+
+function renderBacklog() {
+  const listEl = el('backlog-list');
+  const chip = el('backlog-chip');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  // Aging items first (oldest first), then learning items.
+  const aging = (planData.backlog || [])
+    .slice()
+    .sort((a, b) => (b.age || 0) - (a.age || 0));
+  const learning = planData.learning || [];
+  const total = aging.length + learning.length;
+  if (chip) chip.textContent = String(total);
+
+  if (!total) {
+    listEl.innerHTML =
+      '<div class="backlog-empty">Backlog clear — nothing aging. 🌱</div>';
+    return;
+  }
+
+  for (const item of aging) listEl.appendChild(backlogRow(item));
+  for (const item of learning) listEl.appendChild(backlogRow(item));
+}
+
 // ---------------- Plan / date ----------------
 
 function renderDate() {
@@ -468,7 +646,9 @@ function renderDate() {
 function rerender() {
   renderDate();
   renderFocus();
+  renderTimeline();
   renderTasks();
+  renderBacklog();
 }
 
 // ---------------- Pomodoro UI ----------------
@@ -737,6 +917,7 @@ async function boot() {
   // Re-evaluate the schedule-driven focus periodically while in auto mode.
   setInterval(() => {
     const mode = (settings.focus && settings.focus.mode) || 'auto';
+    renderTimeline();
     if (mode === 'auto' && !editingFocus) {
       renderFocus();
       renderTasks();

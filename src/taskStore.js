@@ -6,7 +6,7 @@ const crypto = require('crypto');
 
 let storePath = null;
 let store = { completed: {}, local: [], order: {} };
-let lastParsed = { date: null, priorities: [], doNow: [], doLater: [], defer: [], schedule: [] };
+let lastParsed = { date: null, priorities: [], active: [], doNow: [], doLater: [], defer: [], schedule: [] };
 let lastFile = null;
 let cache = new Map(); // id -> effective task
 
@@ -53,7 +53,7 @@ function merge(parsed, file) {
   if (parsed) lastParsed = parsed;
   if (file !== undefined) lastFile = file;
 
-  const groups = { priorities: [], doNow: [], doLater: [], defer: [] };
+  const groups = { priorities: [], active: [], doNow: [], doLater: [], defer: [] };
   cache = new Map();
 
   for (const key of Object.keys(groups)) {
@@ -76,6 +76,7 @@ function merge(parsed, file) {
     ...local,
     ...groups.doNow,
     ...groups.priorities,
+    ...groups.active,
     ...groups.doLater,
     ...groups.defer,
   ];

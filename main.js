@@ -24,6 +24,7 @@ let tray = null;
 let planWatcher = null;
 let currentPlanFile = null;
 let currentParsed = null;
+let currentBacklog = null;
 let localServer = null;
 let baseUrl = null;
 
@@ -33,6 +34,9 @@ const DAILY_PLANS_DIR = path.join(
   'Documents',
   'DailyWorkPlans'
 );
+
+const BACKLOG_FILE = path.join(DAILY_PLANS_DIR, 'Backlog.md');
+const LEARNING_FILE = path.join(DAILY_PLANS_DIR, 'LearningPlan.md');
 
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
 
@@ -323,9 +327,25 @@ function findLatestPlanFile() {
   }
 }
 
+function readMaybe(file) {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 function loadPlan() {
   const file = findLatestPlanFile();
-  let parsed = { date: null, priorities: [], doNow: [], doLater: [], defer: [], schedule: [] };
+  let parsed = {
+    date: null,
+    priorities: [],
+    active: [],
+    doNow: [],
+    doLater: [],
+    defer: [],
+    schedule: [],
+  };
   if (file) {
     try {
       const md = fs.readFileSync(file, 'utf8');
@@ -334,19 +354,84 @@ function loadPlan() {
       console.error('Failed to parse plan:', err);
     }
   }
+
+  // Load the two persistent backlogs (aging + learning) and the ignore set.
+  let aging = [];
+  let learning = [];
+  let ignored = { keys: new Set(), entries: [] };
+  const backlogMd = readMaybe(BACKLOG_FILE);
+  if (backlogMd) {
+    try {
+      const b = planParser.parseBacklog(backlogMd);
+      aging = b.aging || [];
+      ignored = b.ignored || ignored;
+    } catch (err) {
+      console.error('Failed to parse Backlog.md:', err);
+    }
+  }
+  const learningMd = readMaybe(LEARNING_FILE);
+  if (learningMd) {
+    try {
+      learning = planParser.parseLearning(learningMd) || [];
+    } catch (err) {
+      console.error('Failed to parse LearningPlan.md:', err);
+    }
+  }
+
+  const ignoredKeys = ignored.keys || new Set();
+  const keep = (item) => !planParser.isIgnored(item, ignoredKeys);
+
+  // Ignored items are dropped from every surface: plan groups, backlog, learning.
+  for (const key of ['priorities', 'active', 'doNow', 'doLater', 'defer']) {
+    if (Array.isArray(parsed[key])) parsed[key] = parsed[key].filter(keep);
+  }
+  aging = aging.filter(keep);
+  learning = learning.filter(keep);
+
+  // De-dupe: once an aging/learning item has been promoted into today's plan it
+  // should leave the backlog panel (it is now live work), so drop backlog items
+  // whose match keys already appear in a plan group.
+  const planKeys = new Set();
+  for (const key of ['priorities', 'active', 'doNow', 'doLater', 'defer']) {
+    for (const t of parsed[key] || []) {
+      for (const k of planParser.itemKeys(t)) planKeys.add(k);
+    }
+  }
+  const notPromoted = (item) =>
+    !planParser.itemKeys(item).some((k) => planKeys.has(k));
+  aging = aging.filter(notPromoted);
+  learning = learning.filter(notPromoted);
+
   currentPlanFile = file;
   currentParsed = parsed;
-  return taskStore.merge(parsed, file);
+  currentBacklog = { aging, learning, ignored };
+
+  const data = taskStore.merge(parsed, file);
+  data.backlog = aging;
+  data.learning = learning;
+  data.backlogFile = fs.existsSync(BACKLOG_FILE) ? BACKLOG_FILE : null;
+  data.learningFile = fs.existsSync(LEARNING_FILE) ? LEARNING_FILE : null;
+  return data;
 }
 
 // Find a plan task (by id) in the most recently parsed plan, returning the
 // info planWriter needs (its line + raw bullet content) plus its group.
 function findPlanTask(id) {
   if (!currentParsed) return null;
-  for (const key of ['priorities', 'doNow', 'doLater', 'defer']) {
+  for (const key of ['priorities', 'active', 'doNow', 'doLater', 'defer']) {
     const t = (currentParsed[key] || []).find((x) => x.id === id);
     if (t) return { task: t, group: key };
   }
+  return null;
+}
+
+// Find a backlog/learning item (by id) plus which file it lives in.
+function findBacklogItem(id) {
+  if (!currentBacklog) return null;
+  const inAging = (currentBacklog.aging || []).find((x) => x.id === id);
+  if (inAging) return { item: inAging, file: BACKLOG_FILE };
+  const inLearning = (currentBacklog.learning || []).find((x) => x.id === id);
+  if (inLearning) return { item: inLearning, file: LEARNING_FILE };
   return null;
 }
 
@@ -562,7 +647,7 @@ function registerIpc() {
   // markdown. Only plan-backed tasks participate; an optional beforeId places the
   // moved item directly above that task in the destination section.
   ipcMain.handle('tasks:move', (_e, id, targetGroup, beforeId) => {
-    const valid = ['priorities', 'doNow', 'doLater', 'defer'];
+    const valid = ['priorities', 'active', 'doNow', 'doLater', 'defer'];
     const hit = findPlanTask(id);
     if (hit && currentPlanFile && valid.includes(targetGroup)) {
       const before = beforeId ? findPlanTask(beforeId) : null;
@@ -611,6 +696,68 @@ function registerIpc() {
   ipcMain.on('overlay:hide', () => {
     if (win) win.hide();
     refreshTrayMenu();
+  });
+
+  // ---- Backlog / learning actions (Backlog.md + LearningPlan.md) ----
+
+  // Promote an aging/learning backlog item into today's plan .md (default: Do
+  // Now) so it becomes live work; loadPlan() then drops it from the panel.
+  ipcMain.handle('backlog:promote', (_e, id, group) => {
+    const hit = findBacklogItem(id);
+    const target = ['priorities', 'active', 'doNow', 'doLater', 'defer'].includes(group)
+      ? group
+      : 'doNow';
+    if (hit && currentPlanFile && hit.item.raw) {
+      try {
+        planWriter.addBullet(
+          currentPlanFile,
+          target,
+          hit.item.raw,
+          planParser.classifyHeading
+        );
+      } catch (err) {
+        console.error('Failed to promote backlog item:', err);
+      }
+    }
+    return loadPlan();
+  });
+
+  // Mark an aging/learning item done (or parked) by flipping its status in the
+  // backlog file it lives in.
+  ipcMain.handle('backlog:markDone', (_e, id) => {
+    const hit = findBacklogItem(id);
+    const slug = hit && hit.item.meta && hit.item.meta.id;
+    if (hit && slug) {
+      try {
+        planWriter.setBacklogStatus(hit.file, slug, 'done');
+      } catch (err) {
+        console.error('Failed to mark backlog item done:', err);
+      }
+    }
+    return loadPlan();
+  });
+
+  // Suppress an item everywhere: append its strongest match key to Backlog.md's
+  // `# Ignored` section.
+  ipcMain.handle('backlog:ignore', (_e, id, reason) => {
+    const hit = findBacklogItem(id);
+    if (hit) {
+      const keys = planParser.itemKeys(hit.item);
+      // Prefer a PR/work-item key, else the stable id key.
+      const key =
+        keys.find((k) => k.startsWith('pr:')) ||
+        keys.find((k) => k.startsWith('wi:')) ||
+        keys.find((k) => k.startsWith('id:')) ||
+        keys[0];
+      if (key) {
+        try {
+          planWriter.appendIgnore(BACKLOG_FILE, key, hit.item.text || hit.item.raw, reason);
+        } catch (err) {
+          console.error('Failed to ignore backlog item:', err);
+        }
+      }
+    }
+    return loadPlan();
   });
 
   ipcMain.handle('music:list', () => {

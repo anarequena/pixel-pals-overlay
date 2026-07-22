@@ -67,11 +67,212 @@ function detectDone(rawText) {
 
 function classifyHeading(heading) {
   const h = heading.toLowerCase();
+  if (/active/.test(h)) return 'active';
   if (/top\s*5|priorit/.test(h)) return 'priorities';
   if (/do\s*now/.test(h)) return 'doNow';
   if (/do\s*later/.test(h)) return 'doLater';
   if (/defer|monitor/.test(h)) return 'defer';
   return null;
+}
+
+// ---------------- Backlog / Learning metadata parsing ----------------
+
+const META_RE = /<!--\s*([\s\S]*?)\s*-->/;
+
+// Parse the single metadata comment line into a key/value map. `reason:` may
+// contain spaces, so it is captured to the end of the comment; all other fields
+// are whitespace-delimited `key:value` tokens (value may be empty, e.g. deadline:).
+function parseMeta(text) {
+  const m = text.match(META_RE);
+  if (!m) return null;
+  let body = m[1];
+  const meta = {};
+  const reasonM = body.match(/\breason:(.*)$/);
+  if (reasonM) {
+    meta.reason = reasonM[1].trim();
+    body = body.slice(0, reasonM.index);
+  }
+  const kv = /([\w-]+):([^\s]*)/g;
+  let k;
+  while ((k = kv.exec(body))) {
+    meta[k[1]] = k[2];
+  }
+  return meta;
+}
+
+// Age in days: prefer explicit carried count, else days since first-seen.
+function computeAge(meta) {
+  if (meta && meta.carried != null && meta.carried !== '') {
+    const n = parseInt(meta.carried, 10);
+    if (!Number.isNaN(n)) return n;
+  }
+  if (meta && meta['first-seen']) {
+    const then = new Date(meta['first-seen'] + 'T00:00:00');
+    if (!Number.isNaN(then.getTime())) {
+      const days = Math.floor((Date.now() - then.getTime()) / 86400000);
+      return days >= 0 ? days : null;
+    }
+  }
+  return null;
+}
+
+// Whole days until a deadline (negative = overdue); null when no/invalid deadline.
+function daysUntil(deadline) {
+  if (!deadline) return null;
+  const d = new Date(deadline + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return null;
+  return Math.ceil((d.getTime() - Date.now()) / 86400000);
+}
+
+// Pull the trailing numeric id out of a PR / work-item URL.
+function extractIdFromUrl(url) {
+  const m = String(url).match(/(\d{4,})(?!.*\d)/);
+  return m ? m[1] : null;
+}
+
+// Match keys for an item, used to test it against the ignore list.
+function itemKeys(item) {
+  const keys = new Set();
+  const meta = item.meta || {};
+  if (meta.id) keys.add('id:' + meta.id);
+  if (item.text) keys.add('id:' + slug(item.text));
+  for (const link of item.links || []) {
+    const id = extractIdFromUrl(link.url);
+    if (!id) continue;
+    if (link.kind === 'pr') keys.add('pr:' + id);
+    else if (link.kind === 'work') keys.add('wi:' + id);
+  }
+  if (meta.pr) keys.add('pr:' + meta.pr);
+  if (meta.wi) keys.add('wi:' + meta.wi);
+  return [...keys];
+}
+
+// Given a set of ignored keys, decide whether an item should be suppressed.
+function isIgnored(item, ignoredKeys) {
+  if (!ignoredKeys || !ignoredKeys.size) return false;
+  return itemKeys(item).some((k) => ignoredKeys.has(k));
+}
+
+// Mark lines that are inside (or are) an HTML comment block so example bullets
+// documented inside `<!-- ... -->` are not mistaken for real items.
+function commentMask(lines) {
+  const mask = new Array(lines.length).fill(false);
+  let inComment = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (inComment) {
+      mask[i] = true;
+      if (line.includes('-->')) inComment = false;
+      continue;
+    }
+    const open = line.indexOf('<!--');
+    if (open !== -1) {
+      const close = line.indexOf('-->', open);
+      if (close === -1) {
+        inComment = true;
+        mask[i] = true;
+      } else if (!line.slice(0, open).trim()) {
+        // whole-line comment (metadata on its own line) — never a bullet
+        mask[i] = true;
+      }
+    }
+  }
+  return mask;
+}
+
+// Parse checkbox bullets whose metadata comment sits on the same line or the
+// immediately following non-empty line. Returns entries with `meta` + `age`.
+function parseMetaBullets(lines, from, to, source, mask) {
+  const items = [];
+  for (let i = from; i < to; i++) {
+    if (mask && mask[i]) continue;
+    const line = lines[i];
+    const bullet = line.match(/^\s*(?:[-*+]|\d+\.)\s+(\[[ xX]\]\s*)?(.*)$/);
+    if (!bullet || !bullet[2].trim()) continue;
+    const checkboxDone = bullet[1] ? /[xX]/.test(bullet[1]) : false;
+
+    let meta = parseMeta(line);
+    let metaLine = meta ? i : null;
+    if (!meta) {
+      for (let j = i + 1; j < to; j++) {
+        if (!lines[j].trim()) continue;
+        const mm = parseMeta(lines[j]);
+        if (mm) {
+          meta = mm;
+          metaLine = j;
+        }
+        break;
+      }
+    }
+
+    const rawItem = bullet[2].replace(META_RE, '').trim();
+    if (!rawItem) continue;
+    const entry = buildEntry(source, rawItem, {
+      line: i,
+      metaLine,
+      meta: meta || {},
+      origin: source,
+    });
+    if (checkboxDone) entry.done = true;
+    entry.status = (meta && meta.status) || (entry.done ? 'done' : 'open');
+    entry.age = computeAge(meta || {});
+    entry.deadlineDays = daysUntil(meta && meta.deadline);
+    entry.topic = (meta && meta.topic) || null;
+    if (meta && meta.id) entry.id = `${source}:${meta.id}`;
+    items.push(entry);
+  }
+  return items;
+}
+
+// Find [start,end) line ranges for each top-level (#) section by heading test.
+function sectionRange(lines, matcher) {
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const h = lines[i].match(/^#{1,6}\s+(.*)$/);
+    if (!h) continue;
+    if (start === -1) {
+      if (matcher(h[1])) start = i + 1;
+    } else {
+      // stop at the next same-or-higher-level heading
+      return [start, i];
+    }
+  }
+  return start === -1 ? null : [start, lines.length];
+}
+
+// Parse Backlog.md → { aging: [...open items...], ignored: { keys:Set, entries:[...] } }.
+function parseBacklog(md) {
+  const lines = (md || '').split(/\r?\n/);
+  const mask = commentMask(lines);
+  const agingRange = sectionRange(lines, (h) => /aging|backlog/i.test(h) && !/ignore/i.test(h));
+  const ignoredRange = sectionRange(lines, (h) => /ignore/i.test(h));
+
+  const aging = agingRange
+    ? parseMetaBullets(lines, agingRange[0], agingRange[1], 'backlog', mask).filter(
+        (it) => it.status !== 'done' && it.status !== 'parked'
+      )
+    : [];
+
+  const ignoredEntries = ignoredRange
+    ? parseMetaBullets(lines, ignoredRange[0], ignoredRange[1], 'ignored', mask)
+    : [];
+  const keys = new Set();
+  for (const e of ignoredEntries) {
+    for (const k of itemKeys(e)) keys.add(k);
+    if (e.meta && e.meta.reason) e.reason = e.meta.reason;
+  }
+  return { aging, ignored: { keys, entries: ignoredEntries } };
+}
+
+// Parse LearningPlan.md → [...open learning items...].
+function parseLearning(md) {
+  const lines = (md || '').split(/\r?\n/);
+  const mask = commentMask(lines);
+  const range = sectionRange(lines, (h) => /learning|learn/i.test(h));
+  const items = range
+    ? parseMetaBullets(lines, range[0], range[1], 'learning', mask)
+    : parseMetaBullets(lines, 0, lines.length, 'learning', mask);
+  return items.filter((it) => it.status !== 'done' && it.status !== 'parked');
 }
 
 // Pull a leading emoji off the plain text / first segment to use as an icon.
@@ -201,6 +402,7 @@ function parse(md) {
   const result = {
     date: null,
     priorities: [],
+    active: [],
     doNow: [],
     doLater: [],
     defer: [],
@@ -234,7 +436,7 @@ function parse(md) {
     }
   }
 
-  for (const key of ['priorities', 'doNow', 'doLater', 'defer']) {
+  for (const key of ['priorities', 'active', 'doNow', 'doLater', 'defer']) {
     const seen = new Set();
     result[key] = result[key].filter((t) => {
       if (seen.has(t.id)) return false;
@@ -247,4 +449,18 @@ function parse(md) {
   return result;
 }
 
-module.exports = { parse, slug, tokenize, parseSchedule, classifyHeading };
+module.exports = {
+  parse,
+  slug,
+  tokenize,
+  parseSchedule,
+  classifyHeading,
+  parseBacklog,
+  parseLearning,
+  parseMeta,
+  computeAge,
+  daysUntil,
+  itemKeys,
+  isIgnored,
+  extractIdFromUrl,
+};

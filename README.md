@@ -25,21 +25,35 @@ music**.
   blocked once the app is closed.
 - **Live daily plan** — automatically reads your latest
   `DailyPlan-YYYY-MM-DD.md` from your `DailyWorkPlans` folder and live-reloads
-  whenever the file changes. Parses **Top 5 Priorities**, **Do Now**,
-  **Do Later Today**, and **Defer / Monitor**.
+  whenever the file changes. The overlay stacks top→bottom as **Timeline →
+  Top 5 → Active → Backlog**.
+- **Timeline (auto-focus)** — your **Time-Blocked Schedule** drives the top panel:
+  each block is a row, the current block is marked **▸ NOW** and the following one
+  **NEXT**, meetings included. Focus follows the timeline automatically as the day
+  advances (override with ✎ / ★ / ↻).
+- **Top 5 (exclusive)** — only items you *exclusively* own and must act on. Shared
+  / group-queue work (apxcr sweeps, FYIs) is kept out so it can't crowd out your
+  deliverables. Injected aging (⏳) or learning (📘) items show their badge here.
+- **Active Items** — in-flight ADO work you own that isn't today's Top 5, plus
+  standing tasks. Live work, sits between Top 5 and the Backlog.
+- **Backlog panel** — a persistent view of two files: `Backlog.md` (**aging**
+  items with escalating ⏳ Nd badges) and `LearningPlan.md` (📘 learning items).
+  Each row has **↑ promote** (into today's Active list), **✓ done**, and
+  **🚫 ignore**. Ignored items are suppressed *everywhere* — never Top 5, never
+  Defer/Monitor, never the backlog — so Defer/Monitor stays meaningful.
 - **Clickable links** — PR and work-item links in your plan render as clickable
   chips (🔗 PRs, 📋 work items) that open in your browser.
 - **Schedule-driven focus** — uses the timestamps in your **Time-Blocked
-  Schedule** to auto-pick what you should be working on *right now*, and shows
-  what's next. Doing something unplanned? Hit ✎ to type a custom focus, ★ to pin
-  a specific task, or ↻ to snap back to the schedule.
+  Schedule** to auto-pick what you should be working on *right now* (see the
+  Timeline panel above), and shows what's next. Doing something unplanned? Hit ✎
+  to type a custom focus, ★ to pin a specific task, or ↻ to snap back to the
+  schedule.
 - **Add / edit / complete / delete** tasks right in the overlay — changes are
   written back into your DailyPlan `.md` file (or saved locally if you have no
   plan yet).
-- **Drag tasks between sections** — grab a plan task and drop it into Do Now,
-  Top 5 Priorities, Do Later, or Defer (or reorder within a section). The move
-  is rewritten into the `.md`, with the Top 5 list auto-renumbered and any
-  embedded links preserved.
+- **Drag tasks between sections** — grab a plan task and drop it into Top 5 or
+  Active (or reorder within a section). The move is rewritten into the `.md`,
+  with the Top 5 list auto-renumbered and any embedded links preserved.
 - **One cute pixel pal** 🐱🐰🐸🐥🦊 — a single animal sits on the focus card,
   hopping livelier (💪) during work sessions and dozing (😴) on breaks.
 - **Pomodoro timer** — 25 / 5 cycles (long break every 4th round) with a
@@ -99,20 +113,28 @@ Tray icon: **left-click** toggles show/hide, **right-click** opens the menu.
 
 ## 🗂️ Where tasks come from
 
-Tasks are merged from two sources:
+Tasks are merged from three sources:
 
 1. **Your DailyPlan file** — the newest
    `…\Documents\DailyWorkPlans\DailyPlan-YYYY-MM-DD\DailyPlan-YYYY-MM-DD.md`.
    Generate one anytime with your `planday` workflow. Edits to the file show up
-   in the overlay within a moment (live file watching). **You can now add, edit,
+   in the overlay within a moment (live file watching). **You can add, edit,
    check off, and delete plan tasks right from the overlay — every change is
    written straight back into the markdown file**, so the `.md` stays the single
    source of truth (line endings preserved, numbered priorities auto-renumbered).
-   New tasks added with the box land in the **Do Now** section. Editing a plan
+   New tasks added with the box land in the **Active** section. Editing a plan
    task opens its raw markdown so embedded PR / work-item links survive. **Drag a
    task onto another section** (or to a new spot within one) to move it — that
    reorder is written back into the `.md` too.
-2. **In-app tasks** — if no plan file exists yet, anything you add with the
+2. **The backlog files** — `DailyWorkPlans\Backlog.md` (aging items + an
+   `# Ignored` section) and `DailyWorkPlans\LearningPlan.md` (learning list).
+   These persist slipping work instead of re-planning it every day. The overlay's
+   **Backlog panel** reads them; **promote** appends an item into today's plan,
+   **done** marks it complete in its file, and **ignore** adds its match key to
+   `# Ignored` so it's suppressed everywhere. `eod-summary` writes items here when
+   they've been carried ≥3 days; `planday` pulls one aging + one learning item
+   back in on Mondays, light days, or when a deadline is ≤3 days out.
+3. **In-app tasks** — if no plan file exists yet, anything you add with the
    `+ Add a task…` box is stored locally in Electron's `userData` folder
    (`tasks.json`) until you generate a plan.
 
@@ -142,9 +164,9 @@ preload.js         Secure bridge exposing window.overlay to the renderer
 src/
   index.html       Overlay markup
   styles.css       Retro pixel-glass theme
-  renderer.js      UI orchestration + schedule focus + links + click-through
-  planParser.js    DailyPlan markdown -> tasks + links + time-blocked schedule
-  planWriter.js    Writes task add/edit/delete/done/move back into the DailyPlan .md
+  renderer.js      UI orchestration: timeline focus, Top 5 / Active / Backlog, links
+  planParser.js    DailyPlan + Backlog.md + LearningPlan.md -> tasks, schedule, aging
+  planWriter.js    Writes add/edit/delete/done/move + backlog promote/done/ignore
   taskStore.js     Merge plan + local tasks, persist completion
   pomodoro.js      Work/break cycle timer
   audio.js         Procedural lofi generator + music-folder player
