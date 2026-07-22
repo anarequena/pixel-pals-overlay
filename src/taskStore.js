@@ -53,18 +53,32 @@ function merge(parsed, file) {
   if (parsed) lastParsed = parsed;
   if (file !== undefined) lastFile = file;
 
-  const groups = { priorities: [], active: [], doNow: [], doLater: [], defer: [] };
+  const parsedGroups = { priorities: [], active: [], doNow: [], doLater: [], defer: [] };
   cache = new Map();
 
-  for (const key of Object.keys(groups)) {
+  for (const key of Object.keys(parsedGroups)) {
     for (const t of lastParsed[key] || []) {
       // Plan tasks are backed by the .md file, which is the source of truth for
       // their done-state, so trust the parsed value directly.
       const task = { ...t, done: !!t.done };
-      groups[key].push(task);
+      parsedGroups[key].push(task);
       cache.set(task.id, task);
     }
   }
+
+  // New layout: Timeline -> Top 5 -> Active -> Backlog. The legacy Do-Now /
+  // Do-Later / Defer-Monitor sections are folded into Active so older plans that
+  // still use those headings don't lose their tasks; new plans only emit Top 5 +
+  // Active. Each task keeps its own `source`, so its badge still reads correctly.
+  const groups = {
+    priorities: parsedGroups.priorities,
+    active: [
+      ...parsedGroups.active,
+      ...parsedGroups.doNow,
+      ...parsedGroups.doLater,
+      ...parsedGroups.defer,
+    ],
+  };
 
   const local = store.local.map((t) => {
     const task = { ...t, done: !!t.done, origin: 'local', source: 'local' };
@@ -74,11 +88,8 @@ function merge(parsed, file) {
 
   const all = [
     ...local,
-    ...groups.doNow,
     ...groups.priorities,
     ...groups.active,
-    ...groups.doLater,
-    ...groups.defer,
   ];
 
   return {

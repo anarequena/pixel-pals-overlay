@@ -8,9 +8,6 @@ const api = window.overlay;
 const GROUPS = [
   { key: 'priorities', label: 'TOP 5 (yours)', cls: 'group-priorities', primary: true },
   { key: 'active', label: 'ACTIVE', cls: 'group-active', primary: true },
-  { key: 'doNow', label: 'DO NOW', cls: 'group-now' },
-  { key: 'doLater', label: 'DO LATER TODAY', cls: 'group-later' },
-  { key: 'defer', label: 'DEFER / MONITOR', cls: 'group-defer' },
   { key: 'local', label: 'MY TASKS', cls: 'group-local' },
 ];
 
@@ -144,7 +141,7 @@ function computeFocus() {
   }
 
   // Else first incomplete actionable task.
-  const order = ['priorities', 'active', 'doNow', 'local', 'doLater'];
+  const order = ['priorities', 'active', 'local'];
   for (const key of order) {
     const list = key === 'local' ? planData.local : planData.groups[key] || [];
     const hit = (list || []).find((t) => !t.done);
@@ -496,13 +493,16 @@ function renderTimeline() {
     else if (b === nextBlock) state = 'next';
     row.className = 'tl-row tl-' + state;
 
-    const marker = document.createElement('span');
-    marker.className = 'tl-marker';
-    marker.textContent = state === 'now' ? '▸ NOW' : state === 'next' ? 'NEXT' : '';
-
     const time = document.createElement('span');
     time.className = 'tl-time';
-    time.textContent = `${fmtMin(b.startMin)}–${fmtMin(b.endMin)}`;
+    const startEl = document.createElement('span');
+    startEl.className = 'tl-start';
+    startEl.textContent = fmtMin(b.startMin);
+    const endEl = document.createElement('span');
+    endEl.className = 'tl-end';
+    endEl.textContent = fmtMin(b.endMin);
+    time.appendChild(startEl);
+    time.appendChild(endEl);
 
     const label = document.createElement('span');
     label.className = 'tl-label';
@@ -514,7 +514,6 @@ function renderTimeline() {
     }
     appendSegments(label, b.segments, b.text);
 
-    row.appendChild(marker);
     row.appendChild(time);
     row.appendChild(label);
     listEl.appendChild(row);
