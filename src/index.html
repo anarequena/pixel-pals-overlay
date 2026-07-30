@@ -27,34 +27,7 @@
         </div>
       </header>
 
-      <!-- Current focus -->
-      <section class="panel focus-card interactive" id="focus-card">
-        <div class="focus-top">
-          <div class="focus-label">
-            <span class="pulse-dot"></span> FOCUS RIGHT NOW
-          </div>
-          <div class="focus-controls">
-            <button class="focus-mini" id="focus-edit" title="Set a custom focus">✎</button>
-            <button class="focus-mini" id="focus-auto" title="Back to scheduled focus">↻</button>
-          </div>
-        </div>
-        <canvas class="focus-pal" id="focus-pal" width="72" height="56"></canvas>
-        <div class="focus-text" id="focus-text">No task selected</div>
-        <div class="focus-meta" id="focus-meta"></div>
-        <div class="focus-next" id="focus-next"></div>
-        <button class="focus-done-btn" id="focus-done">✓ Mark done</button>
-      </section>
-
-      <!-- Timeline (auto-advancing focus follows this schedule) -->
-      <section class="panel timeline interactive" id="timeline">
-        <div class="timeline-head">
-          <span>⏱ TIMELINE</span>
-          <span class="chip" id="timeline-chip"></span>
-        </div>
-        <div class="timeline-list" id="timeline-list"></div>
-      </section>
-
-      <!-- Pomodoro -->
+      <!-- Pomodoro (top) -->
       <section class="panel pomodoro interactive" id="pomodoro">
         <div class="pomo-phase" id="pomo-phase">WORK</div>
         <div class="pomo-ring-wrap">
@@ -85,6 +58,42 @@
             <button class="pomo-btn" id="yt-add" title="Add &amp; play this stream">＋</button>
           </div>
         </div>
+      </section>
+
+      <!-- Current focus -->
+      <section class="panel focus-card interactive" id="focus-card">
+        <div class="focus-top">
+          <div class="focus-label">
+            <span class="pulse-dot"></span> FOCUS RIGHT NOW
+          </div>
+          <div class="focus-controls">
+            <button class="focus-mini" id="focus-edit" title="Set a custom focus">✎</button>
+            <button class="focus-mini" id="focus-auto" title="Back to scheduled focus">↻</button>
+          </div>
+        </div>
+        <canvas class="focus-pal" id="focus-pal" width="72" height="56"></canvas>
+        <div class="focus-text" id="focus-text">No task selected</div>
+        <div class="focus-meta" id="focus-meta"></div>
+        <div class="focus-next" id="focus-next"></div>
+        <button class="focus-done-btn" id="focus-done">✓ Mark done</button>
+      </section>
+
+      <!-- Week priorities -->
+      <section class="panel week interactive" id="week">
+        <div class="week-head">
+          <span>📌 THIS WEEK</span>
+          <span class="chip" id="week-chip">0</span>
+        </div>
+        <div class="week-list" id="week-list"></div>
+      </section>
+
+      <!-- Timeline (auto-advancing focus follows this schedule) -->
+      <section class="panel timeline interactive" id="timeline">
+        <div class="timeline-head">
+          <span>⏱ TIMELINE</span>
+          <span class="chip" id="timeline-chip"></span>
+        </div>
+        <div class="timeline-list" id="timeline-list"></div>
       </section>
 
       <!-- Add task -->

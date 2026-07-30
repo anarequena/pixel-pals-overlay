@@ -275,6 +275,17 @@ function parseLearning(md) {
   return items.filter((it) => it.status !== 'done' && it.status !== 'parked');
 }
 
+// Parse WeekPriorities.md → [...open weekly priority items...].
+function parseWeek(md) {
+  const lines = (md || '').split(/\r?\n/);
+  const mask = commentMask(lines);
+  const range = sectionRange(lines, (h) => /week|priorit/i.test(h));
+  const items = range
+    ? parseMetaBullets(lines, range[0], range[1], 'week', mask)
+    : parseMetaBullets(lines, 0, lines.length, 'week', mask);
+  return items.filter((it) => it.status !== 'done' && it.status !== 'parked');
+}
+
 // Pull a leading emoji off the plain text / first segment to use as an icon.
 function splitIcon(plain, segments) {
   const m = plain.match(EMOJI_RE);
@@ -457,6 +468,7 @@ module.exports = {
   classifyHeading,
   parseBacklog,
   parseLearning,
+  parseWeek,
   parseMeta,
   computeAge,
   daysUntil,

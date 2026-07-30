@@ -37,6 +37,7 @@ const DAILY_PLANS_DIR = path.join(
 
 const BACKLOG_FILE = path.join(DAILY_PLANS_DIR, 'Backlog.md');
 const LEARNING_FILE = path.join(DAILY_PLANS_DIR, 'LearningPlan.md');
+const WEEK_FILE = path.join(DAILY_PLANS_DIR, 'WeekPriorities.md');
 
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
 
@@ -378,6 +379,17 @@ function loadPlan() {
     }
   }
 
+  // Weekly priorities — a separate, longer-horizon list (read-only in the overlay).
+  let week = [];
+  const weekMd = readMaybe(WEEK_FILE);
+  if (weekMd) {
+    try {
+      week = planParser.parseWeek(weekMd) || [];
+    } catch (err) {
+      console.error('Failed to parse WeekPriorities.md:', err);
+    }
+  }
+
   const ignoredKeys = ignored.keys || new Set();
   const keep = (item) => !planParser.isIgnored(item, ignoredKeys);
 
@@ -387,6 +399,7 @@ function loadPlan() {
   }
   aging = aging.filter(keep);
   learning = learning.filter(keep);
+  week = week.filter(keep);
 
   // De-dupe: once an aging/learning item has been promoted into today's plan it
   // should leave the backlog panel (it is now live work), so drop backlog items
@@ -409,8 +422,10 @@ function loadPlan() {
   const data = taskStore.merge(parsed, file);
   data.backlog = aging;
   data.learning = learning;
+  data.week = week;
   data.backlogFile = fs.existsSync(BACKLOG_FILE) ? BACKLOG_FILE : null;
   data.learningFile = fs.existsSync(LEARNING_FILE) ? LEARNING_FILE : null;
+  data.weekFile = fs.existsSync(WEEK_FILE) ? WEEK_FILE : null;
   return data;
 }
 

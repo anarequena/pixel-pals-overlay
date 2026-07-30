@@ -635,6 +635,54 @@ function renderBacklog() {
   for (const item of learning) listEl.appendChild(backlogRow(item));
 }
 
+// ---------------- Week priorities (read-only) ----------------
+
+function weekRow(item) {
+  const row = document.createElement('div');
+  row.className = 'week-item';
+  if (item.id) row.dataset.id = item.id;
+
+  const text = document.createElement('div');
+  text.className = 'week-text';
+  const ic = document.createElement('span');
+  ic.className = 'week-icon';
+  ic.textContent = item.icon || '•';
+  text.appendChild(ic);
+  appendSegments(text, item.segments, item.text);
+  row.appendChild(text);
+
+  // Deadline hint when close.
+  if (item.deadlineDays != null && item.deadlineDays <= 7) {
+    const dl = document.createElement('div');
+    dl.className = 'week-deadline' + (item.deadlineDays <= 3 ? ' urgent' : '');
+    dl.textContent =
+      item.deadlineDays < 0
+        ? `overdue ${-item.deadlineDays}d`
+        : item.deadlineDays === 0
+          ? 'due today'
+          : `due in ${item.deadlineDays}d`;
+    row.appendChild(dl);
+  }
+  return row;
+}
+
+function renderWeek() {
+  const listEl = el('week-list');
+  const chip = el('week-chip');
+  const section = el('week');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  const week = planData.week || [];
+  if (chip) chip.textContent = String(week.length);
+
+  // Hide the whole panel when there are no weekly priorities to show.
+  if (section) section.style.display = week.length ? '' : 'none';
+  if (!week.length) return;
+
+  for (const item of week) listEl.appendChild(weekRow(item));
+}
+
 // ---------------- Plan / date ----------------
 
 function renderDate() {
@@ -647,6 +695,7 @@ function rerender() {
   renderFocus();
   renderTimeline();
   renderTasks();
+  renderWeek();
   renderBacklog();
 }
 

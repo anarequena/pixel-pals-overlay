@@ -710,3 +710,53 @@ body {
 .backlog-item:hover .backlog-actions { opacity: 1; }
 .backlog-promote:hover { color: var(--accent3); }
 .backlog-ignore:hover { color: var(--danger); }
+
+/* ---------- Week priorities ---------- */
+.week { display: flex; flex-direction: column; gap: 6px; }
+.week-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--accent2);
+}
+.week-head .chip {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.week-list { display: flex; flex-direction: column; gap: 3px; }
+.week-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(123, 227, 255, 0.06);
+  border-left: 2px solid rgba(123, 227, 255, 0.35);
+  transition: background 0.15s;
+}
+.week-item:hover { background: rgba(123, 227, 255, 0.12); }
+.week-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.week-icon { margin-right: 4px; }
+.week-deadline {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 1px;
+  white-space: nowrap;
+}
+.week-deadline.urgent { color: var(--danger); font-weight: 600; }
